@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#0a0b0c">
+    <title>Incident Atlas — RCAEval benchmark</title>
+    <link rel="stylesheet" href="styles.css">
+    <script src="app.js" defer></script>
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="brand"><span class="brand-mark" aria-hidden="true">✳</span> INCIDENT ATLAS <span class="brand-caption">/ BENCHMARK</span></div>
+      <div class="topbar-right"><span class="badge preview">RCAEval · RE1</span><span class="top-time">METRIC-ONLY STUDY</span></div>
+    </header>
+    <div class="shell">
+      <aside class="sidebar" aria-label="Case navigation">
+        <div class="eyebrow">BENCHMARK / 01</div>
+        <h1>Cases</h1>
+        <label class="eyebrow case-label" for="case-select">SELECT HELD-OUT CASE</label>
+        <select id="case-select" class="case-select" aria-label="Select benchmark case"></select>
+        <div class="side-note"><span class="eyebrow">SCOPE</span><p>75 selected RE1 cases across three systems. Rankings use metrics only and were evaluated on a system excluded from training.</p></div>
+        <div class="side-spacer"></div>
+        <a class="side-link" href="https://huggingface.co/datasets/phamquiluan/RCAEval" target="_blank" rel="noopener noreferrer">RCAEval dataset ↗</a>
+        <a class="side-link" href="https://github.com/phamquiluan/RCAEval" target="_blank" rel="noopener noreferrer">Benchmark source ↗</a>
+      </aside>
+      <main class="main">
+        <section class="hero" aria-labelledby="hero-title">
+          <div><div class="eyebrow">RE1 <span class="slash">/</span> HELD-OUT INVESTIGATION</div><h2 id="hero-title">Loading benchmark…</h2><p id="hero-copy">Reading measured case results.</p></div>
+          <div class="hero-status"><span class="badge muted-badge">REAL BENCHMARK DATA</span><span id="hero-onset">—</span></div>
+        </section>
+        <section class="metrics" aria-label="Benchmark summary">
+          <div><span class="eyebrow">DATA SOURCE</span><strong>RCAEval RE1</strong><small>Metric-only fault injections</small></div>
+          <div><span class="eyebrow">RANKING</span><strong>Hybrid ranker</strong><small>Equal-weight model + BARO ranks</small></div>
+          <div><span class="eyebrow">EVALUATED CASES</span><strong id="case-count">—</strong><small>75 selected system × service × fault pairs</small></div>
+        </section>
+        <div class="workgrid">
+          <section class="panel map-panel" aria-labelledby="map-title">
+            <div class="panel-heading"><div><span class="eyebrow">01 / SERVICE CANDIDATES</span><h3 id="map-title">Ranked services</h3></div><label class="muted" for="ranking-mode">RANK BY <select id="ranking-mode" class="ranking-mode"><option value="fusion">Hybrid</option><option value="model">Model</option><option value="baro">BARO</option></select></label></div>
+            <div id="service-map" class="service-map"></div>
+            <p class="panel-footnote">Colours describe each displayed metric at the final timestamp. This is a ranked list, not a dependency graph.</p>
+          </section>
+          <section class="panel evidence-panel" aria-labelledby="evidence-title">
+            <div class="panel-heading"><div><span class="eyebrow">02 / SIGNAL INSPECTION</span><h3 id="evidence-title">Evidence</h3></div><span class="badge muted-badge" id="service-role">—</span></div>
+            <div class="evidence-content"><div class="signal-title"><div><span class="eyebrow">SELECTED SERVICE</span><strong id="selected-name">—</strong></div><div class="reading" id="latest-reading">—</div></div><p id="evidence-copy">Choose a service to inspect its metric.</p><div class="divider"></div><div class="eyebrow">INTERPRETATION</div><p class="note">A ranked hypothesis is evidence for investigation, not proof of causality. Rank scores are not calibrated probabilities.</p></div>
+          </section>
+        </div>
+        <section class="panel chart-panel" aria-labelledby="timeline-title">
+          <div class="panel-heading"><div><span class="eyebrow">03 / TEMPORAL VIEW</span><h3 id="timeline-title">Signal timeline</h3></div><span class="legend"><i aria-hidden="true"></i><span id="legend-name">Selected metric</span></span></div>
+          <div class="chart-wrap"><svg id="signal-chart" viewBox="0 0 900 220" role="img" aria-labelledby="chart-title chart-description"><title id="chart-title">Selected service metric</title><desc id="chart-description">Metric values around fault injection.</desc></svg></div>
+          <div class="chart-axis"><span id="start-time">—</span><span>FAULT INJECTION <b id="onset-time">—</b></span><span id="end-time">—</span></div>
+          <p class="panel-footnote" id="chart-thresholds"></p>
+        </section>
+        <div class="workgrid lower-grid">
+          <section class="panel" aria-labelledby="hypotheses-title">
+            <div class="panel-heading"><div><span class="eyebrow">04 / RANKING</span><h3 id="hypotheses-title">Ranked hypotheses</h3></div><span class="muted" id="ranking-caption">Hybrid: model + BARO</span></div>
+            <ol id="hypotheses" class="hypotheses"></ol>
+            <div class="truth-row"><button id="reveal-truth" class="plain-button" type="button">Reveal ground truth</button><span id="ground-truth" aria-live="polite"></span></div>
+            <p class="panel-footnote">Hybrid combines model and BARO service ranks; it uses BARO as an input. Predictions were saved by the reproducible Python benchmark run.</p>
+          </section>
+          <section class="panel" aria-labelledby="evaluation-title">
+            <div class="panel-heading"><div><span class="eyebrow">05 / EVALUATION</span><h3 id="evaluation-title">Measured results</h3></div><span class="muted" id="eval-count">—</span></div>
+            <div id="evaluation" class="evaluation"></div>
+            <p class="panel-footnote">Each case is tested on a system excluded from model training. The first two repetitions were used to choose the hybrid rule; the later 223 cases are its validation set. These subsets are not a full RCAEval score.</p>
+          </section>
+        </div>
+      </main>
+    </div>
+  </body>
+</html>
