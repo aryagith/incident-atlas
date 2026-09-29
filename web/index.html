@@ -4,35 +4,47 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="theme-color" content="#0a0b0c">
-    <title>Incident Atlas — RCAEval benchmark</title>
+    <title>Incident Atlas — Root cause investigation</title>
     <link rel="stylesheet" href="styles.css">
     <script src="app.js" defer></script>
   </head>
   <body>
     <header class="topbar">
-      <div class="brand"><span class="brand-mark" aria-hidden="true">✳</span> INCIDENT ATLAS <span class="brand-caption">/ BENCHMARK</span></div>
+      <div class="brand"><span class="brand-mark" aria-hidden="true">✳</span> INCIDENT ATLAS <span class="brand-caption">/ INVESTIGATE</span></div>
       <div class="topbar-right"><span class="badge preview">RCAEval · RE1</span><span class="top-time">METRIC-ONLY STUDY</span></div>
     </header>
     <div class="shell">
       <aside class="sidebar" aria-label="Case navigation">
-        <div class="eyebrow">BENCHMARK / 01</div>
+        <div class="eyebrow" id="sidebar-eyebrow">BENCHMARK / 01</div>
         <h1>Cases</h1>
-        <label class="eyebrow case-label" for="case-select">SELECT HELD-OUT CASE</label>
-        <select id="case-select" class="case-select" aria-label="Select benchmark case"></select>
-        <div class="side-note"><span class="eyebrow">SCOPE</span><p>75 selected RE1 cases across three systems. Rankings use metrics only and were evaluated on a system excluded from training.</p></div>
+        <label class="eyebrow case-label" for="case-select">SELECT CASE</label>
+        <select id="case-select" class="case-select" aria-label="Select incident case"></select>
+        <button id="open-import" class="plain-button import-open" type="button">+ Analyze your metrics</button>
+        <div class="side-note"><span class="eyebrow">SCOPE</span><p id="sidebar-scope">75 selected RE1 cases across three systems. Rankings use metrics only and were evaluated on a system excluded from training.</p></div>
         <div class="side-spacer"></div>
         <a class="side-link" href="https://huggingface.co/datasets/phamquiluan/RCAEval" target="_blank" rel="noopener noreferrer">RCAEval dataset ↗</a>
         <a class="side-link" href="https://github.com/phamquiluan/RCAEval" target="_blank" rel="noopener noreferrer">Benchmark source ↗</a>
       </aside>
       <main class="main">
+        <section id="import-panel" class="panel import-panel" aria-labelledby="import-title" hidden>
+          <div class="panel-heading"><div><span class="eyebrow">YOUR DATA / LOCAL ANALYSIS</span><h3 id="import-title">Analyze a metrics CSV</h3></div><button id="close-import" class="plain-button" type="button" aria-label="Close import form">Close</button></div>
+          <form id="import-form" class="import-form">
+            <label>INCIDENT NAME<input id="incident-name" type="text" maxlength="80" value="My incident" required></label>
+            <label>FAULT ONSET · UNIX SECONDS<input id="incident-onset" type="number" min="1" step="1" placeholder="e.g. 1685202688" required></label>
+            <label>METRICS CSV<input id="metrics-file" type="file" accept=".csv,text/csv" required></label>
+            <p class="import-help">Use <code>time,service_metric,...</code> headers and one reading per second, with 300 seconds before and after the known onset. Blank metric cells are allowed. The file is analyzed locally and is not saved by the server.</p>
+            <div class="import-actions"><button id="run-analysis" class="plain-button" type="submit">Run analysis</button><button id="try-example" class="plain-button" type="button">Try real sample</button><a href="example.csv" download>Download sample CSV ↗</a></div>
+            <p id="import-feedback" role="status" aria-live="polite"></p>
+          </form>
+        </section>
         <section class="hero" aria-labelledby="hero-title">
-          <div><div class="eyebrow">RE1 <span class="slash">/</span> HELD-OUT INVESTIGATION</div><h2 id="hero-title">Loading benchmark…</h2><p id="hero-copy">Reading measured case results.</p></div>
-          <div class="hero-status"><span class="badge muted-badge">REAL BENCHMARK DATA</span><span id="hero-onset">—</span></div>
+          <div><div id="hero-eyebrow" class="eyebrow">RE1 / HELD-OUT INVESTIGATION</div><h2 id="hero-title">Loading benchmark…</h2><p id="hero-copy">Reading measured case results.</p></div>
+          <div class="hero-status"><span id="data-badge" class="badge muted-badge">REAL BENCHMARK DATA</span><span id="hero-onset">—</span></div>
         </section>
         <section class="metrics" aria-label="Benchmark summary">
-          <div><span class="eyebrow">DATA SOURCE</span><strong>RCAEval RE1</strong><small>Metric-only fault injections</small></div>
+          <div><span class="eyebrow">DATA SOURCE</span><strong id="source-name">RCAEval RE1</strong><small id="source-description">Metric-only fault injections</small></div>
           <div><span class="eyebrow">RANKING</span><strong>Hybrid ranker</strong><small>Equal-weight model + BARO ranks</small></div>
-          <div><span class="eyebrow">EVALUATED CASES</span><strong id="case-count">—</strong><small>75 selected system × service × fault pairs</small></div>
+          <div><span class="eyebrow" id="count-label">EVALUATED CASES</span><strong id="case-count">—</strong><small id="count-description">75 selected system × service × fault pairs</small></div>
         </section>
         <div class="workgrid">
           <section class="panel map-panel" aria-labelledby="map-title">
@@ -48,20 +60,20 @@
         <section class="panel chart-panel" aria-labelledby="timeline-title">
           <div class="panel-heading"><div><span class="eyebrow">03 / TEMPORAL VIEW</span><h3 id="timeline-title">Signal timeline</h3></div><span class="legend"><i aria-hidden="true"></i><span id="legend-name">Selected metric</span></span></div>
           <div class="chart-wrap"><svg id="signal-chart" viewBox="0 0 900 220" role="img" aria-labelledby="chart-title chart-description"><title id="chart-title">Selected service metric</title><desc id="chart-description">Metric values around fault injection.</desc></svg></div>
-          <div class="chart-axis"><span id="start-time">—</span><span>FAULT INJECTION <b id="onset-time">—</b></span><span id="end-time">—</span></div>
+          <div class="chart-axis"><span id="start-time">—</span><span><span id="chart-onset-label">FAULT INJECTION</span> <b id="onset-time">—</b></span><span id="end-time">—</span></div>
           <p class="panel-footnote" id="chart-thresholds"></p>
         </section>
         <div class="workgrid lower-grid">
           <section class="panel" aria-labelledby="hypotheses-title">
             <div class="panel-heading"><div><span class="eyebrow">04 / RANKING</span><h3 id="hypotheses-title">Ranked hypotheses</h3></div><span class="muted" id="ranking-caption">Hybrid: model + BARO</span></div>
             <ol id="hypotheses" class="hypotheses"></ol>
-            <div class="truth-row"><button id="reveal-truth" class="plain-button" type="button">Reveal ground truth</button><span id="ground-truth" aria-live="polite"></span></div>
-            <p class="panel-footnote">Hybrid combines model and BARO service ranks; it uses BARO as an input. Predictions were saved by the reproducible Python benchmark run.</p>
+            <div class="truth-row"><button id="reveal-truth" class="plain-button" type="button">Reveal ground truth</button><button id="download-report" class="plain-button" type="button">Export report</button><span id="ground-truth" aria-live="polite"></span></div>
+            <p id="ranking-footnote" class="panel-footnote">Hybrid combines model and BARO service ranks; it uses BARO as an input. Predictions were saved by the reproducible Python benchmark run.</p>
           </section>
           <section class="panel" aria-labelledby="evaluation-title">
             <div class="panel-heading"><div><span class="eyebrow">05 / EVALUATION</span><h3 id="evaluation-title">Measured results</h3></div><span class="muted" id="eval-count">—</span></div>
             <div id="evaluation" class="evaluation"></div>
-            <p class="panel-footnote">Each case is tested on a system excluded from model training. The first two repetitions were used to choose the hybrid rule; the later 223 cases are its validation set. These subsets are not a full RCAEval score.</p>
+            <p id="evaluation-footnote" class="panel-footnote">Each case is tested on a system excluded from model training. The first two repetitions were used to choose the hybrid rule; the later 223 cases are its validation set. These subsets are not a full RCAEval score.</p>
           </section>
         </div>
       </main>

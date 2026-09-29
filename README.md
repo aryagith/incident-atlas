@@ -1,28 +1,43 @@
 # Incident Atlas
 
-Incident Atlas is a benchmark explorer for microservice root-cause ranking. It trains a small metric-based service ranker on [RCAEval](https://github.com/phamquiluan/RCAEval) RE1 cases and combines its service ranks with the published BARO method. The dashboard lets you inspect metric evidence and switch between the model, BARO, and their hybrid ranking.
+Incident Atlas is a local microservice root-cause investigation app. Import a one-second metrics CSV around a known incident onset, rank service candidates with a trained model and [RCAEval](https://github.com/phamquiluan/RCAEval)'s BARO method, inspect the metric evidence, and export a Markdown investigation report. A built-in RCAEval benchmark explorer shows how the same methods performed on annotated fault injections.
 
 The dashboard uses **real benchmark telemetry**. RCAEval cases are controlled fault injections, not production outages. A high rank is a hypothesis, not proof of cause.
 
 ## Run
 
-On Windows, from this directory:
+On Windows, from this directory (Python 3.11 and Node.js required):
 
 ```powershell
 python -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -r requirements.txt
-.\.venv\Scripts\python.exe benchmark.py all
-.\.venv\Scripts\python.exe benchmark.py sensitivity
-.\.venv\Scripts\python.exe benchmark.py validation
-.\.venv\Scripts\python.exe -m unittest -v test_benchmark.py
+.\.venv\Scripts\python.exe -m unittest discover -v
 node server.mjs
 ```
 
-Run `.\.venv\Scripts\python.exe probe_ranker.py` to reproduce the nine-classifier development comparison; it does not change the benchmark bundles.
+On macOS/Linux, use `python3 -m venv .venv`, `.venv/bin/python -m pip install -r requirements.txt`, `.venv/bin/python -m unittest discover -v`, and `node server.mjs`.
 
-Open [http://localhost:8000](http://localhost:8000). The generated [web/benchmark.json](web/benchmark.json), [web/sensitivity.json](web/sensitivity.json), and [web/validation.json](web/validation.json) are included, so the dashboard can also run with just Node. `benchmark.py all` downloads the first 75 valid cases, trains three held-out fold models, and regenerates the primary JSON. `sensitivity` evaluates the next 75 cases; `validation` evaluates the remaining 223 valid cases. The model always trains on first selected cases from the *other two systems*. Raw Parquet stays in ignored `data/`; no API key is needed. Set `PORT` to use another local port.
+Open [http://localhost:8000](http://localhost:8000). The server binds to `127.0.0.1`; set `PORT` to use another local port. The benchmark bundles and deployable [model/ranker.joblib](model/ranker.joblib) are included. No dataset download or API key is needed to use the app. The browser sends an import to the local Python analyzer; the server does not save the uploaded CSV. Imported incidents remain in the browser session and disappear on reload.
 
-The case picker covers Online Boutique, Sock Shop, and Train Ticket. Switch ranking methods and select a service to inspect its recorded metric and statistical deviation around the injected fault. The ranked lists and evaluation tables are saved outputs from the Python run, not browser-side inference. Reveal ground truth separately; the underlying dataset case names encode the answer, so this is a presentation aid rather than a blind challenge.
+## Analyze your metrics
+
+Click **Analyze your metrics** and enter an incident name, its known fault onset as Unix seconds, and a UTF-8 CSV. **Try real sample** runs the included [web/example.csv](web/example.csv), a 601-second slice of `re1ob_adservice_cpu_1` with onset `1685202688`. Its known answer is used only to check the sample, never sent with the import. Select a service to inspect its metric trace; switch between hybrid, model, and BARO ranks; use **Export report** for a Markdown summary.
+
+```csv
+time,frontend_cpu,frontend_latency,cartservice_cpu,cartservice_latency
+1685202388,12.4,28.0,8.1,17.2
+1685202389,12.2,27.8,8.0,17.1
+```
+
+Use 2–200 unique `service_metric` columns, 601–3,601 consecutive one-second rows, and at least 300 seconds before and after onset. Service and metric names may contain letters, numbers, and hyphens; a single underscore separates them. Values must be finite numbers or blank. Each usable metric needs at least 60 finite pre-onset readings; at least two services need usable metrics. The input limit is 5 MB and analysis has a 30-second server timeout. The endpoint is `POST /api/analyze` with JSON `{ "name": "...", "onset": 1685202688, "csv": "time,..." }`.
+
+The deployable Extra Trees model was retrained on all **373 valid RE1 cases**. The benchmark's held-out fold scores refer to different fold models, so they do **not** estimate accuracy on an arbitrary imported incident. The import has no ground-truth label; candidates are hypotheses rather than verified causes. Metrics are interpreted through statistical deviation from their own pre-onset baseline. Green/yellow/red do not mean a workload is proven healthy, overloaded, or crashing.
+
+## Reproduce the benchmark
+
+Run `.\.venv\Scripts\python.exe benchmark.py all` to fetch the pinned RCAEval revision, regenerate [web/benchmark.json](web/benchmark.json), [web/sensitivity.json](web/sensitivity.json), and [web/validation.json](web/validation.json), and retrain the deployable model. `build`, `sensitivity`, `validation`, and `train` can be run separately. The three benchmark folds train on the first selected cases from the *other two systems*; the deployable model trains on all valid RE1 cases. Raw Parquet stays in ignored `data/`. Run `.\.venv\Scripts\python.exe probe_ranker.py` to reproduce the nine-classifier development comparison; it does not change the benchmark bundles.
+
+The benchmark case picker covers Online Boutique, Sock Shop, and Train Ticket. Select a case and service to inspect its recorded metric and statistical deviation around the injected fault. The benchmark ranks and evaluation tables are saved outputs from the Python run; imported ranks are computed by the local API. Reveal benchmark ground truth separately; the underlying dataset case names encode the answer, so this is a presentation aid rather than a blind challenge.
 
 ## Data and provenance
 
@@ -31,6 +46,7 @@ The case picker covers Online Boutique, Sock Shop, and Train Ticket. Switch rank
 - **Selection:** the first two valid repetitions of each 5 injected services × 5 faults × 3 systems pair form the 150-case development set. The next two valid repetitions and the remaining valid repetition form the 223-case validation set. Case IDs, ranks, cohort IDs, and settings are in the three included JSON bundles. The validation model trains only on the first cohort from the other two systems.
 - **Exclusions:** `re1ob_currencyservice_loss_1` has a malformed injection timestamp (`16933142`) before its recorded time range; repetition 2 takes its primary slot. `re1ob_productcatalogservice_cpu_3` also has an injection timestamp beyond its recorded end. These two pairs therefore have only four valid repetitions, leaving 73 rather than 75 cases in the last cohort.
 - **Telemetry:** the original Parquet values are displayed without unit conversion. The dataset's wide metric table does not provide a per-column unit field; the UI therefore shows source metric names and leaves units unspecified. Null readings remain gaps in the chart.
+- **Included sample:** [web/example.csv](web/example.csv) is derived from the RCAEval case `re1ob_adservice_cpu_1` at the pinned revision under that dataset's MIT license.
 
 ## Methods
 
@@ -73,8 +89,8 @@ The standalone model's validation difference from BARO is **+0.9 points**, with 
 
 Train Ticket remains the hardest held-out system. Results by injected fault and the current run's mean ranking times appear in the dashboard bundle. Timings exclude file reads and feature extraction, and BARO's call includes its own preprocessing, so they are not equal end-to-end latency comparisons.
 
-## Limits and next steps
+## Limits
 
 This is a metric-only study of controlled injections in three systems. It does not measure production reliability, time saved, or causal correctness. The hybrid can be wrong, and its gain relies on running BARO. Bootstrap intervals group repeated injections but cannot capture uncertainty about entirely new systems. The dashboard lists metric-bearing service candidates, not a verified dependency topology.
 
-The next extension is a matched RE2 study with logs and traces where available, measuring whether each source improves held-out ranking before adding it to the UI. A user telemetry import should follow a validated schema and unit contract. Neither capability is claimed in this build.
+The app expects an incident onset supplied by the user and a wide, one-second CSV. It does not ingest logs or traces, discover topology, monitor live systems, infer metric units, or determine whether the top service truly caused a production incident. A matched RE2 study with logs and traces would need measured ablations before those signals could be claimed as improvements.

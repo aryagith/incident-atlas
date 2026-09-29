@@ -25,6 +25,35 @@ function number(value) {
   return Number.isFinite(value) ? new Intl.NumberFormat("en-US", { maximumSignificantDigits: 4 }).format(value) : "—";
 }
 
+function exportReport(caseData) {
+  const ordered = [...caseData.services].sort((a, b) => a.fusionRank - b.fusionRank);
+  const lines = [
+    "# Incident Atlas investigation report",
+    "",
+    `Incident: ${caseData.systemName}`,
+    `Fault onset: ${new Date(caseData.onset * 1000).toISOString()}`,
+    `Source: ${caseData.kind === "uploaded" ? "Imported metrics CSV" : `RCAEval RE1 case ${caseData.id}`}`,
+    `Services analyzed: ${caseData.services.length}`,
+    "",
+    "## Ranked service candidates",
+    "",
+    ...ordered.slice(0, 5).map((service) => `${service.fusionRank}. ${service.name} — model #${service.modelRank}, BARO #${service.baroRank}; ${service.metric}; first sustained deviation ${service.firstAnomalySeconds === null ? "not observed" : `+${service.firstAnomalySeconds}s`}; peak ${number(service.peakDeviation)} robust σ`),
+    "",
+    ...(caseData.groundTruth ? [`Annotated root service: ${caseData.groundTruth}`, ""] : []),
+    "The hybrid combines model and BARO ranks. Its scores are hypotheses, not calibrated probabilities or proof of causality.",
+    ...(caseData.signalWarning ? [caseData.signalWarning] : []),
+  ];
+  const file = new Blob([lines.join("\n") + "\n"], { type: "text/markdown" });
+  const url = URL.createObjectURL(file);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `incident-atlas-${caseData.systemName.toLowerCase().replace(/[^a-z0-9]+/g, "-").slice(0, 40)}.md`;
+  document.body.append(link);
+  link.click();
+  link.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
 function drawChart(caseData, service) {
   const svg = document.querySelector("#signal-chart");
   svg.querySelectorAll(".plot").forEach((element) => element.remove());
@@ -62,8 +91,9 @@ function drawChart(caseData, service) {
   });
   flush();
   svg.append(plot);
-  document.querySelector("#chart-title").textContent = `${service.metric} around fault injection`;
-  document.querySelector("#chart-description").textContent = `Recorded ${service.metric} values from ${clock(caseData.time[0])} to ${clock(caseData.time.at(-1))}. Fault injection at ${clock(caseData.onset)}. Colour indicates absolute deviation from the preceding five-minute baseline: green below 3 robust standard deviations, yellow from 3 to below 6, red at 6 or above. Gaps are missing readings.`;
+  const onsetLabel = caseData.kind === "uploaded" ? "Incident onset" : "Fault injection";
+  document.querySelector("#chart-title").textContent = `${service.metric} around ${onsetLabel.toLowerCase()}`;
+  document.querySelector("#chart-description").textContent = `Recorded ${service.metric} values from ${clock(caseData.time[0])} to ${clock(caseData.time.at(-1))}. ${onsetLabel} at ${clock(caseData.onset)}. Colour indicates absolute deviation from the preceding five-minute baseline: green below 3 robust standard deviations, yellow from 3 to below 6, red at 6 or above. Gaps are missing readings.`;
   document.querySelector("#chart-thresholds").textContent = "SOURCE VALUES, UNCONVERTED  ·  GREEN < 3σ  ·  YELLOW 3–<6σ  ·  RED ≥ 6σ";
 }
 
@@ -82,7 +112,7 @@ function selectService(caseData, service) {
   const badge = document.querySelector("#service-role");
   badge.className = `badge ${service.status}`;
   badge.textContent = `METRIC ${service.status.toUpperCase()}`;
-  const onsetText = service.firstAnomalySeconds === null ? "No sustained critical deviation in the first five minutes after injection." : `First sustained critical deviation at +${service.firstAnomalySeconds} seconds.`;
+  const onsetText = service.firstAnomalySeconds === null ? "No sustained critical deviation in the first five minutes after onset." : `First sustained critical deviation at +${service.firstAnomalySeconds} seconds.`;
   document.querySelector("#evidence-copy").textContent = `${service.metric}: ${onsetText} Peak deviation: ${number(service.peakDeviation)} robust σ. Hybrid rank #${service.fusionRank}; model #${service.modelRank}; BARO #${service.baroRank}; earliest anomaly #${service.baselineRank}.`;
   document.querySelector("#legend-name").textContent = service.metric;
   drawChart(caseData, service);
@@ -91,13 +121,24 @@ function selectService(caseData, service) {
 function renderCase(caseData) {
   const select = document.querySelector("#case-select");
   select.value = caseData.id;
+  const uploaded = caseData.kind === "uploaded";
   const mode = document.querySelector("#ranking-mode").value;
   const rank = `${mode}Rank`;
   const ordered = [...caseData.services].sort((a, b) => a[rank] - b[rank]);
-  document.querySelector("#ranking-caption").textContent = { fusion: "Hybrid: model + BARO", model: "Held-out model", baro: "Published BARO" }[mode];
-  document.querySelector("#hero-title").textContent = `${caseData.systemName} incident`;
-  document.querySelector("#hero-copy").textContent = `${caseData.faultDescription} · ${caseData.services.length} metric-bearing services · held-out system: ${caseData.systemName}`;
-  document.querySelector("#hero-onset").textContent = `FAULT INJECTION ${new Date(caseData.onset * 1000).toISOString().replace("T", " ").slice(0, 19)} UTC`;
+  document.querySelector("#ranking-caption").textContent = { fusion: "Hybrid: model + BARO", model: uploaded ? "Deployed model" : "Held-out model", baro: "Published BARO" }[mode];
+  document.querySelector("#hero-eyebrow").textContent = uploaded ? "YOUR DATA / INVESTIGATION" : "RE1 / HELD-OUT INVESTIGATION";
+  document.querySelector("#sidebar-eyebrow").textContent = uploaded ? "YOUR DATA / SESSION" : "BENCHMARK / 01";
+  document.querySelector("#sidebar-scope").textContent = uploaded ? "This incident has no annotated root cause. Rankings are candidates based on its metric window; benchmark scores do not validate this result." : "75 selected RE1 cases across three systems. Rankings use metrics only and were evaluated on a system excluded from training.";
+  document.querySelector("#hero-title").textContent = uploaded ? caseData.systemName : `${caseData.systemName} incident`;
+  document.querySelector("#hero-copy").textContent = uploaded ? `${caseData.services.length} metric-bearing services · model trained on ${caseData.modelTrainingCases} labeled benchmark cases. ${caseData.signalWarning || "No annotated root cause is available for this import."}` : `${caseData.faultDescription} · ${caseData.services.length} metric-bearing services · held-out system: ${caseData.systemName}`;
+  document.querySelector("#data-badge").textContent = uploaded ? "IMPORTED METRICS" : "REAL BENCHMARK DATA";
+  document.querySelector("#source-name").textContent = uploaded ? "Imported CSV" : "RCAEval RE1";
+  document.querySelector("#source-description").textContent = uploaded ? "Local metrics · no known answer" : "Metric-only fault injections";
+  document.querySelector("#count-label").textContent = uploaded ? "ANALYZED SERVICES" : "EVALUATED CASES";
+  document.querySelector("#case-count").textContent = uploaded ? String(caseData.services.length) : "75";
+  document.querySelector("#count-description").textContent = uploaded ? "Ranked from this incident window" : "75 selected system × service × fault pairs";
+  document.querySelector("#hero-onset").textContent = `${uploaded ? "INCIDENT ONSET" : "FAULT INJECTION"} ${new Date(caseData.onset * 1000).toISOString().replace("T", " ").slice(0, 19)} UTC`;
+  document.querySelector("#chart-onset-label").textContent = uploaded ? "INCIDENT ONSET" : "FAULT INJECTION";
   document.querySelector("#start-time").textContent = clock(caseData.time[0]);
   document.querySelector("#onset-time").textContent = clock(caseData.onset);
   document.querySelector("#end-time").textContent = clock(caseData.time.at(-1));
@@ -127,11 +168,14 @@ function renderCase(caseData) {
   const truth = document.querySelector("#ground-truth");
   truth.textContent = "";
   const reveal = document.querySelector("#reveal-truth");
-  reveal.hidden = false;
-  reveal.onclick = () => {
+  reveal.hidden = uploaded;
+  if (!uploaded) reveal.onclick = () => {
     truth.textContent = `${caseData.groundTruth} · hybrid #${caseData.truthRanks.fusion} · model #${caseData.truthRanks.model} · BARO #${caseData.truthRanks.baro} · anomaly #${caseData.truthRanks.baseline} · case ${caseData.id}`;
     reveal.hidden = true;
   };
+  document.querySelector("#download-report").onclick = () => exportReport(caseData);
+  document.querySelector("#ranking-footnote").textContent = uploaded ? "Hybrid combines the deployable model and BARO ranks. This import is unlabelled; the benchmark scores shown alongside it do not measure accuracy on your data." : "Hybrid combines model and BARO service ranks; it uses BARO as an input. Predictions were saved by the reproducible Python benchmark run.";
+  document.querySelector("#evaluation-footnote").textContent = uploaded ? "These tables describe RCAEval fault injections, not the accuracy of this imported incident. The deployed model was retrained on all 373 valid RE1 cases." : "Each case is tested on a system excluded from model training. The first two repetitions were used to choose the hybrid rule; the later 223 cases are its validation set. These subsets are not a full RCAEval score.";
 }
 
 function table(headers, rows) {
@@ -185,6 +229,7 @@ async function main() {
     if (repeat.kind !== "real-benchmark" || repeat.cases?.length !== 75) throw new Error("Invalid repetition data");
     if (validation.kind !== "real-benchmark" || validation.cases?.length !== 223) throw new Error("Invalid validation data");
     const select = document.querySelector("#case-select");
+    const casesById = new Map(bundle.cases.map((caseData) => [caseData.id, caseData]));
     const grouped = Object.groupBy(bundle.cases, (caseData) => caseData.systemName);
     for (const [system, cases] of Object.entries(grouped)) {
       const group = node("optgroup", "");
@@ -196,8 +241,64 @@ async function main() {
       });
       select.append(group);
     }
-    select.addEventListener("change", () => renderCase(bundle.cases.find((caseData) => caseData.id === select.value)));
-    document.querySelector("#ranking-mode").addEventListener("change", () => renderCase(bundle.cases.find((caseData) => caseData.id === select.value)));
+    select.addEventListener("change", () => renderCase(casesById.get(select.value)));
+    document.querySelector("#ranking-mode").addEventListener("change", () => renderCase(casesById.get(select.value)));
+    const panel = document.querySelector("#import-panel");
+    const feedback = document.querySelector("#import-feedback");
+    const run = document.querySelector("#run-analysis");
+    document.querySelector("#open-import").addEventListener("click", () => { panel.hidden = false; panel.scrollIntoView({ behavior: "smooth", block: "start" }); });
+    document.querySelector("#close-import").addEventListener("click", () => { panel.hidden = true; });
+    async function submitAnalysis(csv, onset, name) {
+      run.disabled = true;
+      feedback.className = "";
+      feedback.textContent = "Analyzing metric evidence…";
+      try {
+        const response = await fetch("api/analyze", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ csv, onset, name }) });
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.error || `Analysis failed (${response.status})`);
+        const caseData = result.case;
+        caseData.modelTrainingCases = result.modelTrainingCases;
+        casesById.set(caseData.id, caseData);
+        let group = document.querySelector("#imported-cases");
+        if (!group) {
+          group = node("optgroup", "");
+          group.id = "imported-cases";
+          group.label = "Your session";
+          select.prepend(group);
+        }
+        let option = [...group.children].find((item) => item.value === caseData.id);
+        if (!option) {
+          option = node("option", caseData.systemName);
+          option.value = caseData.id;
+          group.append(option);
+        }
+        renderCase(caseData);
+        feedback.className = "success";
+        feedback.textContent = `Analyzed ${result.input.metrics} metrics across ${caseData.services.length} services.`;
+        panel.hidden = true;
+        document.querySelector(".hero").scrollIntoView({ behavior: "smooth", block: "start" });
+      } catch (error) {
+        feedback.className = "error";
+        feedback.textContent = error.message;
+      } finally {
+        run.disabled = false;
+      }
+    }
+    document.querySelector("#import-form").addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const file = document.querySelector("#metrics-file").files[0];
+      if (!file) return;
+      if (file.size > 4_500_000) { feedback.className = "error"; feedback.textContent = "Choose a CSV smaller than 4.5 MB."; return; }
+      await submitAnalysis(await file.text(), Number(document.querySelector("#incident-onset").value), document.querySelector("#incident-name").value);
+    });
+    document.querySelector("#try-example").addEventListener("click", async () => {
+      panel.hidden = false;
+      try {
+        const response = await fetch("example.csv");
+        if (!response.ok) throw new Error("Sample CSV unavailable");
+        await submitAnalysis(await response.text(), 1685202688, "Sample adservice CPU incident");
+      } catch (error) { feedback.className = "error"; feedback.textContent = error.message; }
+    });
     renderEvaluation(bundle, repeat, validation);
     renderCase(bundle.cases[0]);
   } catch (error) {
