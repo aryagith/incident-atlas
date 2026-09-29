@@ -97,10 +97,20 @@ button { cursor: pointer; }
 .chart-panel { margin-top: 16px; }
 .legend { font: 11px ui-monospace, SFMono-Regular, Consolas, monospace; color: #abb2b1; display: flex; align-items: center; gap: 8px; }
 .legend i { width: 32px; height: 2px; background: linear-gradient(to right, var(--normal), var(--warning), var(--critical)); }
-.chart-wrap { padding: 20px 25px 0; }
+.chart-wrap { position: relative; padding: 20px 25px 0; }
 svg { width: 100%; height: 220px; display: block; overflow: visible; }
-.chart-axis { display: flex; justify-content: space-between; gap: 12px; color: #858d8f; padding: 11px 26px 21px; }
+#signal-chart { cursor: crosshair; }
+#signal-chart:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; }
+.chart-inspector { position: absolute; top: 24px; z-index: 1; pointer-events: none; min-width: 190px; max-width: min(260px, calc(100% - 20px)); padding: 11px 13px; background: #1b2021; border: 1px solid #697274; box-shadow: 0 8px 24px #0009; font: 11px ui-monospace, SFMono-Regular, Consolas, monospace; }
+.chart-inspector span, .chart-inspector strong { display: block; }
+.chart-inspector #inspect-time { color: #aab1b2; }
+.chart-inspector #inspect-value { font-size: 16px; margin: 8px 0; color: #e7e8e6; }
+.chart-inspector.normal #inspect-detail { color: var(--normal); }
+.chart-inspector.warning #inspect-detail { color: var(--warning); }
+.chart-inspector.critical #inspect-detail, .chart-inspector.missing #inspect-detail { color: var(--critical); }
+.chart-axis { display: flex; justify-content: space-between; gap: 12px; color: #858d8f; padding: 11px 26px 8px; }
 .chart-axis b { color: var(--critical); font-weight: 500; }
+.chart-hint { margin: 0; padding: 0 26px 8px; color: #a0a9aa; font: 10px ui-monospace, SFMono-Regular, Consolas, monospace; line-height: 1.5; }
 .lower-grid { margin-top: 16px; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; }
 .lower-grid.cloud-mode { grid-template-columns: 1fr; }
 .hypotheses { list-style: none; margin: 0; padding: 9px 22px 12px; }

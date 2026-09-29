@@ -61,15 +61,21 @@ function exportReport(caseData) {
 function drawChart(caseData, service) {
   const svg = document.querySelector("#signal-chart");
   svg.querySelectorAll(".plot").forEach((element) => element.remove());
+  const inspector = document.querySelector("#chart-inspector");
+  inspector.hidden = true;
+  svg.onpointermove = svg.onpointerdown = svg.onpointerleave = svg.onfocus = svg.onblur = svg.onkeydown = null;
   const values = service.values;
   const times = service.times || caseData.time;
-  const finite = values.filter(Number.isFinite);
+  const validIndices = values.map((value, index) => Number.isFinite(value) && Number.isFinite(service.severityScores[index]) ? index : -1).filter((index) => index >= 0);
+  const finite = validIndices.map((index) => values[index]);
   if (!finite.length) return;
   const min = Math.min(...finite);
   const span = Math.max(Math.max(...finite) - min, Math.abs(min) * 0.01, 1e-9);
   const rangeStart = caseData.kind === "cloud" ? caseData.time[0] : times[0];
   const rangeEnd = caseData.kind === "cloud" ? caseData.time.at(-1) : times.at(-1);
   const range = Math.max(rangeEnd - rangeStart, 1);
+  const sampleSteps = times.slice(1).map((time, index) => time - times[index]).sort((a, b) => a - b);
+  const displayCadence = sampleSteps[Math.floor(sampleSteps.length / 2)] || 1;
   const x = (index) => 24 + ((times[index] - rangeStart) * 852) / range;
   const y = (value) => 174 - ((value - min) / span) * 124;
   const plot = svgElement("g", { class: "plot" });
@@ -104,7 +110,80 @@ function drawChart(caseData, service) {
     annotation.textContent = "INSUFFICIENT POST-ONSET READINGS";
     plot.append(annotation);
   }
+  const cursor = svgElement("g", { class: "chart-cursor", "pointer-events": "none" });
+  const guide = svgElement("line", { y1: 24, y2: 183, stroke: "#d2d8d8", "stroke-width": 1, "stroke-dasharray": "3 4" });
+  const marker = svgElement("circle", { r: 6, stroke: "#e7e8e6", "stroke-width": 2 });
+  cursor.append(guide, marker);
+  cursor.style.display = "none";
+  plot.append(cursor);
   svg.append(plot);
+  const wrap = svg.parentElement;
+  const placeInspector = (svgX) => {
+    const rect = svg.getBoundingClientRect();
+    const anchor = rect.left - wrap.getBoundingClientRect().left + (svgX / 900) * rect.width;
+    const left = svgX >= 450 ? anchor - inspector.offsetWidth - 14 : anchor + 14;
+    inspector.style.left = `${Math.max(8, Math.min(left, wrap.clientWidth - inspector.offsetWidth - 8))}px`;
+  };
+  const hideInspector = () => { inspector.hidden = true; cursor.style.display = "none"; };
+  let activePosition = -1;
+  const showSample = (position) => {
+    activePosition = position;
+    const index = validIndices[position];
+    const time = times[index];
+    const score = service.severityScores[index];
+    const level = severity(score, service.thresholds);
+    const svgX = x(index);
+    guide.setAttribute("x1", svgX);
+    guide.setAttribute("x2", svgX);
+    marker.setAttribute("cx", svgX);
+    marker.setAttribute("cy", y(values[index]));
+    marker.setAttribute("fill", colorFor(score));
+    marker.style.display = "";
+    cursor.style.display = "";
+    inspector.className = `chart-inspector ${level}`;
+    document.querySelector("#inspect-time").textContent = new Date(time * 1000).toISOString().replace("T", " ").replace(".000Z", " UTC");
+    document.querySelector("#inspect-value").textContent = `${number(values[index])}${service.unit ? ` ${service.unit}` : ""}`;
+    document.querySelector("#inspect-detail").textContent = `${level.toUpperCase()} · ${number(score)} robust σ · ${time >= caseData.onset ? "+" : "−"}${Math.abs(time - caseData.onset)}s from onset`;
+    inspector.hidden = false;
+    placeInspector(svgX);
+  };
+  const showGap = (svgX, time) => {
+    guide.setAttribute("x1", svgX);
+    guide.setAttribute("x2", svgX);
+    marker.style.display = "none";
+    cursor.style.display = "";
+    inspector.className = "chart-inspector missing";
+    document.querySelector("#inspect-time").textContent = new Date(Math.round(time) * 1000).toISOString().replace("T", " ").replace(".000Z", " UTC");
+    document.querySelector("#inspect-value").textContent = "No reading";
+    document.querySelector("#inspect-detail").textContent = "GAP IN RECORDED DATA";
+    inspector.hidden = false;
+    placeInspector(svgX);
+  };
+  const inspectPointer = (event) => {
+    const rect = svg.getBoundingClientRect();
+    const svgX = (event.clientX - rect.left) * 900 / rect.width;
+    if (svgX < 24 || svgX > 876) { hideInspector(); return; }
+    const time = rangeStart + (svgX - 24) * range / 852;
+    const position = validIndices.reduce((best, index, position) => Math.abs(times[index] - time) < Math.abs(times[validIndices[best]] - time) ? position : best, 0);
+    const tolerance = displayCadence * 0.75;
+    if (Math.abs(times[validIndices[position]] - time) > tolerance) showGap(svgX, time);
+    else showSample(position);
+  };
+  svg.onpointermove = inspectPointer;
+  svg.onpointerdown = (event) => { svg.focus({ preventScroll: true }); inspectPointer(event); };
+  svg.onpointerleave = hideInspector;
+  svg.onblur = hideInspector;
+  svg.onfocus = () => {
+    const next = validIndices.findIndex((index) => times[index] >= caseData.onset);
+    showSample(next < 0 ? validIndices.length - 1 : next);
+  };
+  svg.onkeydown = (event) => {
+    if (event.key === "Escape") { hideInspector(); return; }
+    if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+    event.preventDefault();
+    const position = event.key === "Home" ? 0 : event.key === "End" ? validIndices.length - 1 : Math.max(0, Math.min(validIndices.length - 1, activePosition + (event.key === "ArrowRight" ? 1 : -1)));
+    showSample(position);
+  };
   const onsetLabel = caseData.kind === "uploaded" || caseData.kind === "cloud" ? "Incident onset" : "Fault injection";
   document.querySelector("#chart-title").textContent = `${service.metric} around ${onsetLabel.toLowerCase()}`;
   document.querySelector("#chart-description").textContent = `Recorded ${service.metric} values from ${clock(times[0])} to ${clock(times.at(-1))}. ${onsetLabel} at ${clock(caseData.onset)}. Colour indicates absolute deviation from ${caseData.kind === "cloud" ? "pre-onset observations" : "the preceding five-minute baseline"}: green below 3 robust standard deviations, yellow from 3 to below 6, red at 6 or above. Gaps are missing readings.${service.insufficientPostSamples ? " This metric has fewer than five post-onset readings while another service continued reporting." : ""}`;

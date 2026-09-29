@@ -62,8 +62,9 @@
         </div>
         <section class="panel chart-panel" aria-labelledby="timeline-title">
           <div class="panel-heading"><div><span class="eyebrow">03 / TEMPORAL VIEW</span><h3 id="timeline-title">Signal timeline</h3></div><span class="legend"><i aria-hidden="true"></i><span id="legend-name">Selected metric</span></span></div>
-          <div class="chart-wrap"><svg id="signal-chart" viewBox="0 0 900 220" role="img" aria-labelledby="chart-title chart-description"><title id="chart-title">Selected service metric</title><desc id="chart-description">Metric values around fault injection.</desc></svg></div>
+          <div class="chart-wrap"><svg id="signal-chart" viewBox="0 0 900 220" role="img" tabindex="0" aria-labelledby="chart-title chart-description" aria-describedby="chart-hint"><title id="chart-title">Selected service metric</title><desc id="chart-description">Metric values around fault injection.</desc></svg><div id="chart-inspector" class="chart-inspector" hidden><span id="inspect-time"></span><strong id="inspect-value"></strong><span id="inspect-detail"></span></div></div>
           <div class="chart-axis"><span id="start-time">—</span><span><span id="chart-onset-label">FAULT INJECTION</span> <b id="onset-time">—</b></span><span id="end-time">—</span></div>
+          <p class="chart-hint" id="chart-hint">Hover or click to inspect a reading. Focus the graph and use ← →, Home, or End to traverse it.</p>
           <p class="panel-footnote" id="chart-thresholds"></p>
         </section>
         <div class="workgrid lower-grid" id="lower-grid">
