@@ -1,4 +1,4 @@
-"""Analyze a 1 Hz service-metric CSV sent as JSON on stdin."""
+"""Analyze benchmark-shaped CSV or native-cadence cloud metrics sent on stdin."""
 
 import csv
 import hashlib
@@ -12,6 +12,7 @@ import pandas as pd
 from joblib import load
 
 from benchmark import MODEL_PATH, case_from_metrics, load_baro, rank_baro, rank_case, rank_fusion
+from cloud_metrics import analyze_cloud, timestamp
 
 
 METRIC_NAME = re.compile(r"[A-Za-z][A-Za-z0-9-]{0,63}_[A-Za-z][A-Za-z0-9-]{0,63}\Z")
@@ -64,7 +65,15 @@ def parse_csv(source, onset, name):
 def analyze(payload):
     if not isinstance(payload, dict):
         raise ValueError("Request must be a JSON object")
-    row, times, metrics = parse_csv(payload.get("csv"), payload.get("onset"), payload.get("name"))
+    source, name = payload.get("content", payload.get("csv")), payload.get("name")
+    if not isinstance(source, str) or not source.strip() or len(source.encode("utf-8")) > MAX_INPUT_BYTES:
+        raise ValueError("File is empty or exceeds 5 MB")
+    if not isinstance(name, str) or not 1 <= len(name.strip()) <= 80 or any(ord(char) < 32 for char in name):
+        raise ValueError("Incident name must be 1–80 printable characters")
+    onset = timestamp(payload.get("onset"))
+    if source.lstrip("\ufeff \t\r\n").startswith(("{", "timestamp,")):
+        return analyze_cloud(source, onset, name)
+    row, times, metrics = parse_csv(source, onset, name)
     artifact = load(MODEL_PATH)
     if artifact.get("featureCount") != 7:
         raise ValueError("Trained model has an incompatible feature schema")

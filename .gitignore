@@ -5,3 +5,4 @@ data/
 artifacts/
 .pytest_cache/
 .DS_Store
+cloudwatch-export*.json
