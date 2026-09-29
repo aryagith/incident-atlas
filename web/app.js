@@ -237,7 +237,10 @@ function renderCase(caseData) {
   const select = document.querySelector("#case-select");
   select.value = caseData.id;
   const cloud = caseData.kind === "cloud";
+  const validation = caseData.kind === "validation";
   const uploaded = caseData.kind === "uploaded" || cloud;
+  const lab = document.querySelector("#validation-lab");
+  lab.hidden = !validation;
   const ranking = document.querySelector("#ranking-mode");
   for (const option of ranking.options) {
     option.hidden = cloud ? option.value !== "evidence" : option.value === "evidence";
@@ -249,21 +252,21 @@ function renderCase(caseData) {
   const rank = `${mode}Rank`;
   const ordered = [...caseData.services].sort((a, b) => a[rank] - b[rank]);
   document.querySelector("#ranking-caption").textContent = cloud ? "Observed metric evidence" : { fusion: "Hybrid: model + BARO", model: uploaded ? "Deployed model" : "Held-out model", baro: "Published BARO" }[mode];
-  document.querySelector("#hero-eyebrow").textContent = uploaded ? "YOUR DATA / INVESTIGATION" : "RE1 / HELD-OUT INVESTIGATION";
-  document.querySelector("#sidebar-eyebrow").textContent = uploaded ? "YOUR DATA / SESSION" : "BENCHMARK / 01";
-  document.querySelector("#sidebar-scope").textContent = cloud ? "Cloud service observations are ranked at their original cadence. This is change evidence near onset, not a validated causal model." : uploaded ? "This incident has no annotated root cause. Rankings are candidates based on its metric window; benchmark scores do not validate this result." : "75 selected RE1 cases across three systems. Rankings use metrics only and were evaluated on a system excluded from training.";
+  document.querySelector("#hero-eyebrow").textContent = validation ? "RE1 / HELD-OUT VALIDATION" : uploaded ? "YOUR DATA / INVESTIGATION" : "RE1 / HELD-OUT INVESTIGATION";
+  document.querySelector("#sidebar-eyebrow").textContent = validation ? "VALIDATION / 223" : uploaded ? "YOUR DATA / SESSION" : "BENCHMARK / 01";
+  document.querySelector("#sidebar-scope").textContent = validation ? "223 later RCAEval cases. Replay saved out-of-sample predictions, then compare your hypothesis with the annotated root." : cloud ? "Cloud service observations are ranked at their original cadence. This is change evidence near onset, not a validated causal model." : uploaded ? "This incident has no annotated root cause. Rankings are candidates based on its metric window; benchmark scores do not validate this result." : "75 selected RE1 cases across three systems. Rankings use metrics only and were evaluated on a system excluded from training.";
   document.querySelector("#hero-title").textContent = uploaded ? caseData.systemName : `${caseData.systemName} incident`;
-  document.querySelector("#hero-copy").textContent = cloud ? `${caseData.services.length} services · about ${caseData.cadenceSeconds}s between observations. ${caseData.signalWarning || "Evidence ranking from metric changes around the supplied onset."}` : uploaded ? `${caseData.services.length} metric-bearing services · model trained on ${caseData.modelTrainingCases} labeled benchmark cases. ${caseData.signalWarning || "No annotated root cause is available for this import."}` : `${caseData.faultDescription} · ${caseData.services.length} metric-bearing services · held-out system: ${caseData.systemName}`;
-  document.querySelector("#data-badge").textContent = cloud ? "CLOUD SERVICE METRICS" : uploaded ? "IMPORTED METRICS" : "REAL BENCHMARK DATA";
+  document.querySelector("#hero-copy").textContent = cloud ? `${caseData.services.length} services · about ${caseData.cadenceSeconds}s between observations. ${caseData.signalWarning || "Evidence ranking from metric changes around the supplied onset."}` : uploaded ? `${caseData.services.length} metric-bearing services · model trained on ${caseData.modelTrainingCases} labeled benchmark cases. ${caseData.signalWarning || "No annotated root cause is available for this import."}` : `${caseData.faultDescription} · ${caseData.services.length} metric-bearing services · ${validation ? "validation fold" : "held-out system"}: ${caseData.systemName}`;
+  document.querySelector("#data-badge").textContent = validation ? "HELD-OUT VALIDATION" : cloud ? "CLOUD SERVICE METRICS" : uploaded ? "IMPORTED METRICS" : "REAL BENCHMARK DATA";
   document.querySelector("#top-badge").textContent = cloud ? "CLOUD METRICS" : "RCAEval · RE1";
-  document.querySelector("#top-context").textContent = cloud ? "LOCAL INVESTIGATION" : "METRIC-ONLY STUDY";
+  document.querySelector("#top-context").textContent = validation ? "VALIDATION PRACTICE" : cloud ? "LOCAL INVESTIGATION" : "METRIC-ONLY STUDY";
   document.querySelector("#source-name").textContent = cloud ? caseData.source : uploaded ? "Imported CSV" : "RCAEval RE1";
-  document.querySelector("#source-description").textContent = cloud ? "Provider metric cadence" : uploaded ? "Local metrics · no known answer" : "Metric-only fault injections";
+  document.querySelector("#source-description").textContent = cloud ? "Provider metric cadence" : uploaded ? "Local metrics · no known answer" : validation ? "Later labeled fault injections" : "Metric-only fault injections";
   document.querySelector("#ranking-name").textContent = cloud ? "Evidence ranking" : { fusion: "Hybrid ranker", model: "Trained model", baro: "BARO" }[mode];
   document.querySelector("#ranking-description").textContent = cloud ? "Robust pre-onset deviation" : { fusion: "Equal-weight model + BARO ranks", model: "Trained on RCAEval cases", baro: "Published metric ranker" }[mode];
-  document.querySelector("#count-label").textContent = uploaded ? "ANALYZED SERVICES" : "EVALUATED CASES";
-  document.querySelector("#case-count").textContent = uploaded ? String(caseData.services.length) : "75";
-  document.querySelector("#count-description").textContent = cloud ? "With usable pre-onset observations" : uploaded ? "Ranked from this incident window" : "75 selected system × service × fault pairs";
+  document.querySelector("#count-label").textContent = uploaded ? "ANALYZED SERVICES" : validation ? "VALIDATION CASES" : "EVALUATED CASES";
+  document.querySelector("#case-count").textContent = uploaded ? String(caseData.services.length) : validation ? "223" : "75";
+  document.querySelector("#count-description").textContent = cloud ? "With usable pre-onset observations" : uploaded ? "Ranked from this incident window" : validation ? "Later repetitions · saved fold predictions" : "75 selected system × service × fault pairs";
   document.querySelector(".metrics").setAttribute("aria-label", uploaded ? "Incident summary" : "Benchmark summary");
   document.querySelector("#hero-onset").textContent = `${uploaded ? "INCIDENT ONSET" : "FAULT INJECTION"} ${new Date(caseData.onset * 1000).toISOString().replace("T", " ").slice(0, 19)} UTC`;
   document.querySelector("#chart-onset-label").textContent = uploaded ? "INCIDENT ONSET" : "FAULT INJECTION";
@@ -296,13 +299,35 @@ function renderCase(caseData) {
   const truth = document.querySelector("#ground-truth");
   truth.textContent = "";
   const reveal = document.querySelector("#reveal-truth");
-  reveal.hidden = uploaded;
-  if (!uploaded) reveal.onclick = () => {
+  reveal.hidden = uploaded || validation;
+  if (!uploaded && !validation) reveal.onclick = () => {
     truth.textContent = `${caseData.groundTruth} · hybrid #${caseData.truthRanks.fusion} · model #${caseData.truthRanks.model} · BARO #${caseData.truthRanks.baro} · anomaly #${caseData.truthRanks.baseline} · case ${caseData.id}`;
     reveal.hidden = true;
   };
-  document.querySelector("#download-report").onclick = () => exportReport(caseData);
-  document.querySelector("#ranking-footnote").textContent = cloud ? "Ranks prioritize missing service telemetry, then the earliest two consecutive critical observations, affected metric count, and peak deviation. No RCAEval model or BARO score is applied to cloud data. Check whether missing data reflects autoscaling, workload inactivity, or a monitoring gap." : uploaded ? "Hybrid combines the deployable model and BARO ranks. This import is unlabelled; the benchmark scores shown alongside it do not measure accuracy on your data." : "Hybrid combines model and BARO service ranks; it uses BARO as an input. Predictions were saved by the reproducible Python benchmark run.";
+  const report = document.querySelector("#download-report");
+  report.hidden = validation;
+  report.onclick = () => exportReport(caseData);
+  const guess = document.querySelector("#hypothesis-select");
+  const feedback = document.querySelector("#validation-feedback");
+  feedback.textContent = "";
+  feedback.className = "";
+  if (validation) {
+    guess.replaceChildren(node("option", "Choose a service"), ...[...caseData.services].sort((a, b) => a.name.localeCompare(b.name)).map((service) => {
+      const option = node("option", service.name);
+      option.value = service.id;
+      return option;
+    }));
+    guess.firstElementChild.value = "";
+    guess.onchange = () => { feedback.textContent = ""; feedback.className = ""; report.hidden = true; };
+    document.querySelector("#check-hypothesis").onclick = () => {
+      if (!guess.value) { feedback.textContent = "Choose a service before checking."; return; }
+      const correct = guess.value === caseData.groundTruth;
+      feedback.className = correct ? "correct" : "incorrect";
+      feedback.textContent = `${correct ? "Correct." : `You chose ${guess.value}.`} Annotated root: ${caseData.groundTruth}. Hybrid rank #${caseData.truthRanks.fusion}; model #${caseData.truthRanks.model}; BARO #${caseData.truthRanks.baro}.`;
+      report.hidden = false;
+    };
+  }
+  document.querySelector("#ranking-footnote").textContent = validation ? "These service ranks were saved from held-out folds, not computed by the deployed model. The hybrid includes BARO. The annotated root is revealed only when you check your hypothesis." : cloud ? "Ranks prioritize missing service telemetry, then the earliest two consecutive critical observations, affected metric count, and peak deviation. No RCAEval model or BARO score is applied to cloud data. Check whether missing data reflects autoscaling, workload inactivity, or a monitoring gap." : uploaded ? "Hybrid combines the deployable model and BARO ranks. This import is unlabelled; the benchmark scores shown alongside it do not measure accuracy on your data." : "Hybrid combines model and BARO service ranks; it uses BARO as an input. Predictions were saved by the reproducible Python benchmark run.";
   document.querySelector("#evaluation-footnote").textContent = uploaded ? "These tables describe RCAEval fault injections, not the accuracy of this imported incident. The deployed model was retrained on all 373 valid RE1 cases." : "Each case is tested on a system excluded from model training. The first two repetitions were used to choose the hybrid rule; the later 223 cases are its validation set. These subsets are not a full RCAEval score.";
   document.querySelector("#evaluation-panel").hidden = cloud;
   document.querySelector("#lower-grid").classList.toggle("cloud-mode", cloud);
@@ -373,6 +398,58 @@ async function main() {
     }
     select.addEventListener("change", () => renderCase(casesById.get(select.value)));
     document.querySelector("#ranking-mode").addEventListener("change", () => renderCase(casesById.get(select.value)));
+    const validationButton = document.querySelector("#open-validation");
+    const validationStatus = document.querySelector("#validation-load-status");
+    let validationCases = null;
+    let nextValidationIndex = 0;
+    document.querySelector("#score-validation").addEventListener("click", () => {
+      if (!validationCases) return;
+      const rows = [["Earliest anomaly", "baseline"], ["BARO", "baro"], ["Trained model", "model"], ["Hybrid", "fusion"]].map(([label, method]) => {
+        const ranks = validationCases.map((item) => item.truthRanks[method]);
+        const top1 = ranks.filter((rank) => rank === 1).length;
+        const top3 = ranks.filter((rank) => rank <= 3).length;
+        return [label, `${top1}/${ranks.length} (${(100 * top1 / ranks.length).toFixed(1)}%)`, `${(100 * top3 / ranks.length).toFixed(1)}%`, (ranks.reduce((sum, rank) => sum + 1 / rank, 0) / ranks.length).toFixed(3)];
+      });
+      const results = document.querySelector("#validation-run-results");
+      results.replaceChildren(node("p", "Computed from the 223 saved held-out ranks and annotations. This scores predictions; it does not retrain the model."), table(["Method", "Top 1", "Top 3", "MRR"], rows));
+      results.hidden = false;
+    });
+    validationButton.addEventListener("click", async () => {
+      validationButton.disabled = true;
+      validationStatus.textContent = "";
+      try {
+        if (!validationCases) {
+          validationButton.textContent = "Loading held-out cases…";
+          const response = await fetch("validation-cases.json");
+          if (!response.ok) throw new Error("Validation case data is unavailable");
+          const details = await response.json();
+          const summary = new Map(validation.cases.map((item) => [item.id, item]));
+          if (details.kind !== "validation-cases" || details.cases?.length !== 223 || details.cases.some((item) => item.groundTruth !== summary.get(item.id)?.rootService || !item.services?.length)) throw new Error("Validation case data does not match the saved evaluation");
+          validationCases = details.cases;
+          nextValidationIndex = Math.floor(Math.random() * validationCases.length);
+          for (const [system, cases] of Object.entries(Object.groupBy(validationCases, (item) => item.systemName))) {
+            const group = node("optgroup", "");
+            group.label = `Validation · ${system}`;
+            cases.forEach((caseData, index) => {
+              caseData.kind = "validation";
+              casesById.set(caseData.id, caseData);
+              const option = node("option", `${caseData.fault.toUpperCase()} · Case ${String(index + 1).padStart(2, "0")}`);
+              option.value = caseData.id;
+              group.append(option);
+            });
+            select.append(group);
+          }
+        }
+        renderCase(validationCases[nextValidationIndex++ % validationCases.length]);
+        validationButton.textContent = "Try another held-out case";
+        document.querySelector("#validation-lab").scrollIntoView({ behavior: "smooth", block: "start" });
+      } catch (error) {
+        validationStatus.textContent = error.message;
+        validationButton.textContent = "Retry held-out cases";
+      } finally {
+        validationButton.disabled = false;
+      }
+    });
     const panel = document.querySelector("#import-panel");
     const feedback = document.querySelector("#import-feedback");
     const run = document.querySelector("#run-analysis");

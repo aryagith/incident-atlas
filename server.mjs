@@ -17,6 +17,7 @@ const files = {
   "/benchmark.json": ["benchmark.json", "application/json; charset=utf-8"],
   "/sensitivity.json": ["sensitivity.json", "application/json; charset=utf-8"],
   "/validation.json": ["validation.json", "application/json; charset=utf-8"],
+  "/validation-cases.json": ["validation-cases.json", "application/json; charset=utf-8"],
   "/example.csv": ["example.csv", "text/csv; charset=utf-8"],
 };
 

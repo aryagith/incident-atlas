@@ -20,6 +20,8 @@
         <label class="eyebrow case-label" for="case-select">SELECT CASE</label>
         <select id="case-select" class="case-select" aria-label="Select incident case"></select>
         <button id="open-import" class="plain-button import-open" type="button">+ Analyze your metrics</button>
+        <button id="open-validation" class="plain-button import-open" type="button">Try 223 held-out cases</button>
+        <p id="validation-load-status" role="status" aria-live="polite"></p>
         <div class="side-note"><span class="eyebrow">SCOPE</span><p id="sidebar-scope">75 selected RE1 cases across three systems. Rankings use metrics only and were evaluated on a system excluded from training.</p></div>
         <div class="side-spacer"></div>
         <a class="side-link" href="https://huggingface.co/datasets/phamquiluan/RCAEval" target="_blank" rel="noopener noreferrer">RCAEval dataset ↗</a>
@@ -39,6 +41,17 @@
             <div class="import-actions"><button id="run-analysis" class="plain-button" type="submit">Run analysis</button><button id="try-example" class="plain-button" type="button">Try RCAEval sample</button><a href="example.csv" download>Download sample CSV ↗</a></div>
             <p id="import-feedback" role="status" aria-live="polite"></p>
           </form>
+        </section>
+        <section id="validation-lab" class="panel validation-lab" aria-labelledby="validation-lab-title" hidden>
+          <div class="panel-heading"><div><span class="eyebrow">VALIDATION / PRACTICE</span><h3 id="validation-lab-title">Investigate a held-out case</h3></div><span class="muted">223 CASES</span></div>
+          <div class="validation-body">
+            <p>These are later RCAEval fault injections. Model ranks were saved from folds trained on earlier cases in the <strong>other two systems</strong>; the hybrid also uses BARO. The known root is hidden until you check your hypothesis.</p>
+            <ol><li>Inspect the ranked services and hover over their metric timelines.</li><li>Choose the service you think caused the fault, then check the annotation.</li><li>In a real incident, you would import metrics around an alert and verify the candidate with logs, traces, and deployment history. There is no known answer; cloud imports use a separate evidence ranking.</li></ol>
+            <div class="validation-guess"><label for="hypothesis-select">YOUR ROOT-SERVICE HYPOTHESIS</label><select id="hypothesis-select"><option value="">Choose a service</option></select><button id="check-hypothesis" class="plain-button" type="button">Check hypothesis</button></div>
+            <p id="validation-feedback" role="status" aria-live="polite"></p>
+            <button id="score-validation" class="plain-button" type="button">Score all 223 saved predictions</button>
+            <div id="validation-run-results" hidden></div>
+          </div>
         </section>
         <section class="hero" aria-labelledby="hero-title">
           <div><div id="hero-eyebrow" class="eyebrow">RE1 / HELD-OUT INVESTIGATION</div><h2 id="hero-title">Loading benchmark…</h2><p id="hero-copy">Reading measured case results.</p></div>

@@ -54,6 +54,20 @@ class BenchmarkCheck(unittest.TestCase):
         self.assertEqual(set(validation["developmentCaseIds"]), ids[1])
         self.assertEqual([len(validation["cohorts"][name]["caseIds"]) for name in ("third", "fourth", "last")], [75, 75, 73])
 
+    def test_validation_cases_match_saved_evaluation(self):
+        web = Path(__file__).parent / "web"
+        summary = json.loads((web / "validation.json").read_text(encoding="utf-8"))
+        details = json.loads((web / "validation-cases.json").read_text(encoding="utf-8"))
+        indexed = {case["id"]: case for case in summary["cases"]}
+        self.assertEqual(details["kind"], "validation-cases")
+        self.assertEqual(len(details["cases"]), 223)
+        self.assertEqual({case["id"] for case in details["cases"]}, indexed.keys())
+        for case in details["cases"]:
+            saved = indexed[case["id"]]
+            self.assertEqual(case["groundTruth"], saved["rootService"])
+            self.assertEqual(case["truthRanks"], saved["truthRanks"])
+            self.assertTrue(case["services"] and case["time"])
+
 
 if __name__ == "__main__":
     unittest.main()

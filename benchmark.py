@@ -282,7 +282,7 @@ def paired_summary(cases, first, second):
     return {"difference": clean_number(sums.sum() / counts.sum()), "ci95": [clean_number(value) for value in np.quantile(bootstrap, [0.025, 0.975])], "resamplingUnit": "system × root service × fault"}
 
 
-def build(rows, training_rows=None, output=OUTPUT, compact=False, selection=None, cohorts=None, development_rows=None):
+def build(rows, training_rows=None, output=OUTPUT, compact=False, selection=None, cohorts=None, development_rows=None, detail_output=None):
     cases = [read_case(row) for row in rows]
     training_cases = [read_case(row) for row in training_rows] if training_rows is not None else cases
     for held_out in sorted({case["system"] for case in cases}):
@@ -332,6 +332,10 @@ def build(rows, training_rows=None, output=OUTPUT, compact=False, selection=None
     temporary = output.with_suffix(".json.tmp")
     temporary.write_text(json.dumps(result, separators=(",", ":")), encoding="utf-8")
     os.replace(temporary, output)
+    if detail_output:
+        detail_temporary = detail_output.with_suffix(".json.tmp")
+        detail_temporary.write_text(json.dumps({"kind": "validation-cases", "cases": cases}, separators=(",", ":")), encoding="utf-8")
+        os.replace(detail_temporary, detail_output)
     print(json.dumps({"cases": len(cases), "evaluation": evaluation, "bySystem": {key: {method: summary["top1"] for method, summary in value.items()} for key, value in by_system.items()}}, indent=2))
     print(f"Wrote {output} ({output.stat().st_size / 1024 / 1024:.1f} MiB)")
 
@@ -353,7 +357,7 @@ def main():
         if args.command in ("validation", "all"):
             final = third + fourth + last
             fetch(final)
-            build(final, training_rows=first, output=OUTPUT.with_name("validation.json"), compact=True, selection="third and fourth valid repetitions for all 75 pairs, plus the last valid repetition for 73 pairs; equal-weight fusion chosen on first and second repetitions", cohorts={"third": third, "fourth": fourth, "last": last}, development_rows=second)
+            build(final, training_rows=first, output=OUTPUT.with_name("validation.json"), compact=True, selection="third and fourth valid repetitions for all 75 pairs, plus the last valid repetition for 73 pairs; equal-weight fusion chosen on first and second repetitions", cohorts={"third": third, "fourth": fourth, "last": last}, development_rows=second, detail_output=OUTPUT.with_name("validation-cases.json"))
         if args.command in ("train", "all"):
             training = first + second + third + fourth + last
             fetch(training)

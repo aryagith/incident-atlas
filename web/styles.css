@@ -36,6 +36,7 @@ button { cursor: pointer; }
 .case-label { display: block; margin: 5px 9px 10px; }
 .case-select { width: 100%; min-height: 42px; padding: 9px; background: #1b2021; color: #e7e8e6; border: 1px solid #555d5f; font: 12px ui-monospace, SFMono-Regular, Consolas, monospace; }
 .import-open { display: block; width: 100%; margin-top: 12px; text-align: left; }
+#validation-load-status { margin: 6px 9px 0; color: var(--critical); font-size: 11px; line-height: 1.5; }
 .ranking-mode { margin-left: 6px; padding: 6px; background: #1b2021; color: #e7e8e6; border: 1px solid #555d5f; font: inherit; }
 .side-spacer { flex: 1; min-height: 50px; }
 .side-note { border-top: 1px solid #34383a; padding: 18px 9px 10px; }
@@ -44,6 +45,20 @@ button { cursor: pointer; }
 .side-link:hover { text-decoration: underline; }
 .main { min-width: 0; padding: 30px clamp(18px, 3vw, 48px) 40px; max-width: 1550px; width: 100%; margin: auto; }
 .import-panel { margin-bottom: 16px; }
+.validation-lab { margin-bottom: 16px; }
+.validation-body { padding: 18px 22px; color: #aeb6b5; font-size: 12px; line-height: 1.65; }
+.validation-body p { margin: 0 0 12px; }
+.validation-body strong { color: #e7e8e6; }
+.validation-body ol { margin: 0 0 16px; padding-left: 20px; }
+.validation-body li + li { margin-top: 4px; }
+.validation-guess { display: flex; flex-wrap: wrap; gap: 10px; align-items: end; }
+.validation-guess label { width: 100%; color: #aab1b2; font: 10px ui-monospace, SFMono-Regular, Consolas, monospace; letter-spacing: .06em; }
+.validation-guess select { min-height: 34px; min-width: 180px; max-width: 100%; padding: 7px 9px; border: 1px solid #555d5f; background: #1b2021; color: #e7e8e6; font: 11px ui-monospace, SFMono-Regular, Consolas, monospace; }
+#validation-feedback { margin: 12px 0 0; min-height: 18px; color: var(--accent); }
+#validation-feedback.correct { color: var(--normal); }
+#validation-feedback.incorrect { color: var(--critical); }
+#validation-run-results { margin-top: 12px; max-width: 560px; overflow-x: auto; }
+#validation-run-results p { color: #aab1b2; font-size: 11px; }
 .import-form { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; padding: 22px; }
 .import-form label { display: flex; flex-direction: column; gap: 9px; color: #aab1b2; font: 10px ui-monospace, SFMono-Regular, Consolas, monospace; letter-spacing: .06em; }
 .import-form input { width: 100%; min-height: 40px; border: 1px solid #555d5f; background: #1b2021; color: #e7e8e6; padding: 8px; font: 12px ui-monospace, SFMono-Regular, Consolas, monospace; }
