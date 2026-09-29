@@ -89,6 +89,8 @@ Run `.\.venv\Scripts\python.exe benchmark.py all` to fetch the pinned RCAEval re
 
 The benchmark case picker covers Online Boutique, Sock Shop, and Train Ticket. Select a case and service to inspect its recorded metric and statistical deviation around the injected fault. The benchmark ranks and evaluation tables are saved outputs from the Python run; imported ranks are computed by the local API. Reveal benchmark ground truth separately; the underlying dataset case names encode the answer, so this is a presentation aid rather than a blind challenge.
 
+Hover or click the timeline to inspect a displayed observation; focus it and use the arrow, Home, and End keys to traverse samples. Cloud service cards rank using all imported metric streams, and the metric selector lets you inspect each stream without changing the service rank. The chart shows at most 121 samples per stream, while cloud ranking uses all observations in the import.
+
 ## Data and provenance
 
 - **Source:** [RCAEval dataset mirror](https://huggingface.co/datasets/phamquiluan/RCAEval), revision `afeacb11bcc94dadfd1c8f483ee4377b2b8b614e`; [authors' code](https://github.com/phamquiluan/RCAEval).

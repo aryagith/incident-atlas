@@ -177,6 +177,8 @@ def analyze_cloud(source, onset, name):
     services = []
     for name_of_service, metrics in grouped.items():
         chosen = min(metrics, key=lambda item: (not item["insufficientPostSamples"], item["firstAnomalySeconds"] if item["firstAnomalySeconds"] is not None else float("inf"), -item["peakDeviation"], item["metric"]))
+        chosen["metricStreams"] = [{key: item[key] for key in ("metric", "unit", "times", "values", "severityScores", "thresholds", "status", "firstAnomalySeconds", "peakDeviation", "insufficientPostSamples", "postSamples")}
+                                   for item in sorted(metrics, key=lambda item: item["metric"])]
         chosen["triggeredMetrics"] = sum(item["firstAnomalySeconds"] is not None for item in metrics)
         chosen["missingMetrics"] = sum(item["insufficientPostSamples"] for item in metrics)
         chosen["metricCount"] = len(metrics)

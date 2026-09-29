@@ -62,6 +62,7 @@
         </div>
         <section class="panel chart-panel" aria-labelledby="timeline-title">
           <div class="panel-heading"><div><span class="eyebrow">03 / TEMPORAL VIEW</span><h3 id="timeline-title">Signal timeline</h3></div><span class="legend"><i aria-hidden="true"></i><span id="legend-name">Selected metric</span></span></div>
+          <div id="metric-toolbar" class="metric-toolbar" hidden><label for="metric-select">METRIC STREAM</label><select id="metric-select" aria-label="Metric stream for selected service"></select></div>
           <div class="chart-wrap"><svg id="signal-chart" viewBox="0 0 900 220" role="img" tabindex="0" aria-labelledby="chart-title chart-description" aria-describedby="chart-hint"><title id="chart-title">Selected service metric</title><desc id="chart-description">Metric values around fault injection.</desc></svg><div id="chart-inspector" class="chart-inspector" hidden><span id="inspect-time"></span><strong id="inspect-value"></strong><span id="inspect-detail"></span></div></div>
           <div class="chart-axis"><span id="start-time">—</span><span><span id="chart-onset-label">FAULT INJECTION</span> <b id="onset-time">—</b></span><span id="end-time">—</span></div>
           <p class="chart-hint" id="chart-hint">Hover or click to inspect a reading. Focus the graph and use ← →, Home, or End to traverse it.</p>
@@ -76,6 +77,7 @@
           </section>
           <section class="panel" id="evaluation-panel" aria-labelledby="evaluation-title">
             <div class="panel-heading"><div><span class="eyebrow">05 / EVALUATION</span><h3 id="evaluation-title">Measured results</h3></div><span class="muted" id="eval-count">—</span></div>
+            <p class="model-explainer">Model: Extra Trees classifier trained to rank candidate root services from seven anomaly features. The deployable model uses 373 labeled RCAEval RE1 incidents; benchmark results use held-out systems. Cloud imports use a separate evidence ranking.</p>
             <div id="evaluation" class="evaluation"></div>
             <p id="evaluation-footnote" class="panel-footnote">Each case is tested on a system excluded from model training. The first two repetitions were used to choose the hybrid rule; the later 223 cases are its validation set. These subsets are not a full RCAEval score.</p>
           </section>

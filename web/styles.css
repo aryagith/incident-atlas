@@ -97,6 +97,8 @@ button { cursor: pointer; }
 .chart-panel { margin-top: 16px; }
 .legend { font: 11px ui-monospace, SFMono-Regular, Consolas, monospace; color: #abb2b1; display: flex; align-items: center; gap: 8px; }
 .legend i { width: 32px; height: 2px; background: linear-gradient(to right, var(--normal), var(--warning), var(--critical)); }
+.metric-toolbar { display: flex; align-items: center; gap: 12px; padding: 13px 25px 0; color: #9da5a7; font: 10px ui-monospace, SFMono-Regular, Consolas, monospace; }
+.metric-toolbar select { min-width: 0; max-width: 100%; padding: 8px 10px; border: 1px solid #535c5e; background: #202526; color: #e7e8e6; font: 11px ui-monospace, SFMono-Regular, Consolas, monospace; }
 .chart-wrap { position: relative; padding: 20px 25px 0; }
 svg { width: 100%; height: 220px; display: block; overflow: visible; }
 #signal-chart { cursor: crosshair; }
@@ -122,6 +124,7 @@ svg { width: 100%; height: 220px; display: block; overflow: visible; }
 .plain-button:hover { background: #303637; }
 #ground-truth { color: var(--normal); overflow-wrap: anywhere; }
 .evaluation { padding: 18px 22px; overflow-x: auto; }
+.model-explainer { margin: 0; padding: 15px 22px 0; color: #aab1b2; font-size: 11px; line-height: 1.6; }
 .evaluation h4 { font-size: 11px; text-transform: uppercase; letter-spacing: .08em; color: #a8acad; margin: 22px 0 7px; }
 .results-table { width: 100%; border-collapse: collapse; font-size: 11px; white-space: nowrap; }
 .results-table th, .results-table td { text-align: left; padding: 7px 8px; border-bottom: 1px solid #303637; }

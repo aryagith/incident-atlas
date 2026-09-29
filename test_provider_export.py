@@ -67,6 +67,8 @@ class ProviderExportCheck(unittest.TestCase):
             case = analyze({"content": content, "onset": ONSET, "name": "Azure incident"})["case"]
             self.assertEqual(case["source"], "Azure Container Apps")
             self.assertEqual(case["services"][0]["name"], "checkout")
+            self.assertEqual([item["metric"] for item in case["services"][0]["metricStreams"]],
+                             ["checkout.cpu", "checkout.memory", "checkout.requests"])
             self.assertIn("Microsoft.App%2Fcontainerapps", run.call_args_list[0].args[0][5])
             self.assertIn("aggregation=Average%2CTotal", run.call_args_list[0].args[0][5])
 

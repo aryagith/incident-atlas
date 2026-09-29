@@ -199,23 +199,38 @@ function selectService(caseData, service) {
     button.setAttribute("aria-pressed", String(selected));
   });
   document.querySelector("#selected-name").textContent = service.name;
-  const last = service.values.at(-1);
-  const score = service.severityScores.at(-1);
-  const latest = document.querySelector("#latest-reading");
-  latest.textContent = `${number(last)}${service.unit ? ` ${service.unit}` : ""}${service.insufficientPostSamples ? " · last seen" : ""}`;
-  latest.style.color = service.insufficientPostSamples ? getComputedStyle(document.documentElement).getPropertyValue("--critical").trim() : Number.isFinite(score) ? getComputedStyle(document.documentElement).getPropertyValue(`--${severity(score, service.thresholds)}`).trim() : "";
-  const badge = document.querySelector("#service-role");
-  badge.className = `badge ${service.status}`;
-  badge.textContent = service.insufficientPostSamples ? "SIGNAL MISSING" : `METRIC ${service.status.toUpperCase()}`;
   const cloud = caseData.kind === "cloud";
-  const onsetText = service.firstAnomalySeconds === null ? cloud ? "No two consecutive critical observations after onset." : "No sustained critical deviation in the first five minutes after onset." : `First sustained critical deviation at +${service.firstAnomalySeconds} seconds.`;
-  document.querySelector("#evidence-copy").textContent = cloud
-    ? service.insufficientPostSamples
-      ? `${service.missingMetrics} of ${service.metricCount} metric streams have fewer than five post-onset readings while other services continued. This can reflect autoscaling, idle workloads, stopped tasks, or a telemetry gap; verify in ${caseData.source}. Evidence rank #${service.evidenceRank}.`
-      : `${service.metric}: ${onsetText} Peak deviation: ${number(service.peakDeviation)} robust σ. Evidence rank #${service.evidenceRank}; ${service.triggeredMetrics} of ${service.metricCount} metrics triggered. Observed cadence about ${caseData.cadenceSeconds} seconds.`
-    : `${service.metric}: ${onsetText} Peak deviation: ${number(service.peakDeviation)} robust σ. Hybrid rank #${service.fusionRank}; model #${service.modelRank}; BARO #${service.baroRank}; earliest anomaly #${service.baselineRank}.`;
-  document.querySelector("#legend-name").textContent = service.metric;
-  drawChart(caseData, service);
+  const streams = service.metricStreams || [service];
+  const picker = document.querySelector("#metric-toolbar");
+  const metricSelect = document.querySelector("#metric-select");
+  picker.hidden = streams.length < 2;
+  metricSelect.replaceChildren(...streams.map((stream, index) => {
+    const option = node("option", stream.metric);
+    option.value = String(index);
+    return option;
+  }));
+  const selectedIndex = Math.max(0, streams.findIndex((stream) => stream.metric === service.metric));
+  metricSelect.value = String(selectedIndex);
+  const showMetric = (metric) => {
+    const last = metric.values.at(-1);
+    const score = metric.severityScores.at(-1);
+    const latest = document.querySelector("#latest-reading");
+    latest.textContent = `${number(last)}${metric.unit ? ` ${metric.unit}` : ""}${metric.insufficientPostSamples ? " · last seen" : ""}`;
+    latest.style.color = metric.insufficientPostSamples ? getComputedStyle(document.documentElement).getPropertyValue("--critical").trim() : Number.isFinite(score) ? getComputedStyle(document.documentElement).getPropertyValue(`--${severity(score, metric.thresholds)}`).trim() : "";
+    const badge = document.querySelector("#service-role");
+    badge.className = `badge ${metric.status}`;
+    badge.textContent = metric.insufficientPostSamples ? "SIGNAL MISSING" : `METRIC ${metric.status.toUpperCase()}`;
+    const onsetText = metric.firstAnomalySeconds === null ? cloud ? "No two consecutive critical observations after onset." : "No sustained critical deviation in the first five minutes after onset." : `First sustained critical deviation at +${metric.firstAnomalySeconds} seconds.`;
+    document.querySelector("#evidence-copy").textContent = cloud
+      ? metric.insufficientPostSamples
+        ? `${metric.metric} has fewer than five post-onset readings while other services continued. This can reflect autoscaling, inactivity, stopped tasks, or a telemetry gap; verify in ${caseData.source}. Service evidence rank #${service.evidenceRank} considers all ${service.metricCount} metric streams.`
+        : `${metric.metric}: ${onsetText} Peak deviation: ${number(metric.peakDeviation)} robust σ. Service evidence rank #${service.evidenceRank} considers all ${service.metricCount} metric streams; ${service.triggeredMetrics} triggered and ${service.missingMetrics} had sparse post-onset data.`
+      : `${metric.metric}: ${onsetText} Peak deviation: ${number(metric.peakDeviation)} robust σ. Hybrid rank #${service.fusionRank}; model #${service.modelRank}; BARO #${service.baroRank}; earliest anomaly #${service.baselineRank}.`;
+    document.querySelector("#legend-name").textContent = metric.metric;
+    drawChart(caseData, metric);
+  };
+  metricSelect.onchange = () => showMetric(streams[Number(metricSelect.value)]);
+  showMetric(streams[selectedIndex]);
 }
 
 function renderCase(caseData) {
