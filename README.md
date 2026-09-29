@@ -1,6 +1,6 @@
 # Incident Atlas
 
-Incident Atlas is a local service-metrics investigation app. Its practical cloud path exports real Amazon ECS service metrics through CloudWatch, imports the timestamped result without inventing one-second samples, ranks changes around a known incident onset, and exports a Markdown evidence report. It also accepts long-form CSV from other monitoring systems. A separate [RCAEval](https://github.com/phamquiluan/RCAEval) benchmark explorer retains the trained model, BARO comparison, and held-out evaluation.
+Incident Atlas is a local service-metrics investigation app. Its cloud exporters read Amazon ECS, Azure Container Apps, or GCP Cloud Run metrics using configured provider credentials. The app imports timestamped observations without inventing one-second samples, ranks changes around a known incident onset, and exports a Markdown evidence report. It also accepts long-form CSV from other monitoring systems. A separate [RCAEval](https://github.com/phamquiluan/RCAEval) benchmark explorer retains the trained model, BARO comparison, and held-out evaluation.
 
 The built-in benchmark uses **real benchmark telemetry**. RCAEval cases are controlled fault injections, not production outages. A high rank from either path is a hypothesis, not proof of cause.
 
@@ -33,6 +33,28 @@ In the app, click **Analyze your metrics**, enter the same onset and an incident
 
 This cloud ranking is a transparent triage heuristic: it prioritizes missing telemetry, then the earliest two consecutive critical deviations, affected metric count, and peak deviation. It has **no measured root-cause accuracy on AWS incidents**. The RCAEval model and BARO scores are deliberately absent from cloud imports because they were developed on a different one-second dataset. A changed downstream service may outrank the actual cause.
 
+## Use real Azure Container Apps metrics
+
+Sign in with the [Azure CLI](https://learn.microsoft.com/cli/azure/authenticate-azure-cli) to a subscription where you can read Azure Monitor metrics. Choose at least two Container Apps in one resource group and the incident onset. Run:
+
+```powershell
+.\.venv\Scripts\python.exe provider_export.py azure --subscription 11111111-1111-1111-1111-111111111111 --resource-group production --services checkout payments --onset 2026-09-29T14:00:00Z
+```
+
+Replace the example subscription UUID and names. Import the resulting `azure-containerapps-export.json` in the app with the same onset. The exporter calls the [Azure Monitor Metrics REST API](https://learn.microsoft.com/en-us/rest/api/monitor/metrics/list?view=rest-monitor-2023-10-01) through the signed-in Azure CLI. For each app it requests the documented [Container Apps metrics](https://learn.microsoft.com/en-us/azure/container-apps/metrics) `UsageNanoCores`, `WorkingSetBytes`, and `Requests` at `PT1M`. CPU and memory use the rolled-up **Average**; requests use **Total** per minute. Units stay as nanocores, bytes, and count per minute. Null buckets remain gaps. A response split into multiple dimension series is rejected rather than silently combined. Use `--output PATH` to pick another output file.
+
+## Use real GCP Cloud Run metrics
+
+Sign in with the [Google Cloud CLI](https://docs.cloud.google.com/sdk/docs/authorizing) to a project where you can read Cloud Monitoring time series. Choose at least two Cloud Run services in the same region and the incident onset. Run:
+
+```powershell
+.\.venv\Scripts\python.exe provider_export.py gcp --project YOUR_PROJECT --region us-central1 --services checkout payments --onset 2026-09-29T14:00:00Z
+```
+
+Import `gcp-cloudrun-export.json` with the same onset. The exporter uses the CLI's short-lived access token only in memory to call [`projects.timeSeries.list`](https://docs.cloud.google.com/monitoring/api/ref_v3/rest/v3/projects.timeSeries/list), follows page tokens, and requests only the named Cloud Run services. It maps the documented [Cloud Run metrics](https://docs.cloud.google.com/monitoring/api/metrics_gcp_p_z): CPU and memory utilization distributions become a one-minute **median per revision, then mean across revisions**; request counts become a one-minute sum across revisions and response codes. Google's utilization ratio is multiplied by 100 for display as percent, per its [unit definition](https://docs.cloud.google.com/monitoring/api/ref_v3/rpc/google.api). These are service summaries, not per-container diagnostics. Cloud Run may have no samples when scaled to zero or idle; those gaps remain gaps. Use `--output PATH` for another filename.
+
+Both exporters validate that the output has at least two usable services before saving. Their default filenames are Git-ignored. They read metrics with existing CLI sign-in and do not save credentials. Azure and GCP imports use the same unvalidated evidence ranking as AWS; the RCAEval model and benchmark accuracy do not apply.
+
 ## Import a long-form CSV
 
 If another monitor can export metric values, provide UTF-8 CSV with this header and timestamped rows. ISO 8601 timestamps must include a timezone; Unix seconds also work. An optional `unit` column is supported.
@@ -45,7 +67,7 @@ timestamp,service,metric,value,unit
 2026-09-29T13:31:00Z,payments,cpu,27.9,%
 ```
 
-Supply two or more services, 2–200 metric series, 10 pre-onset observations per usable series, and at least one series with 5 post-onset observations inside the 30-minute window on each side. Readings need not align perfectly or arrive every second; gaps stay gaps. Duplicate points and nonfinite values are rejected. This is a portable schema, **not** a claim that Azure or GCP console downloads already have these four columns. They still need a provider-specific mapping, which this build does not include.
+Supply two or more services, 2–200 metric series, 10 pre-onset observations per usable series, and at least one series with 5 post-onset observations inside the 30-minute window on each side. Readings need not align perfectly or arrive every second; gaps stay gaps. Duplicate points and nonfinite values are rejected. This is a portable schema; Azure and GCP **console CSV downloads** might have different columns. Use the provider exporters above for their documented API responses.
 
 ## RCAEval CSV and benchmark model
 
@@ -121,4 +143,4 @@ Train Ticket remains the hardest held-out system. Results by injected fault and 
 
 The benchmark is a metric-only study of controlled injections in three systems. It does not measure production reliability, time saved, or causal correctness. The hybrid can be wrong, and its gain relies on running BARO. Bootstrap intervals group repeated injections but cannot capture uncertainty about entirely new systems. The dashboard lists metric-bearing service candidates, not a verified dependency topology.
 
-The cloud path expects an incident onset supplied by the user and at least two observable services. It has been tested against CloudWatch-shaped fixtures and the local API, but not against a live AWS account in this workspace. It does not ingest logs or traces, discover topology, monitor live systems, or determine whether the top service truly caused a production incident. Azure and GCP do not yet have direct exporters here. A matched study on labeled cloud incidents would be needed before claiming cloud root-cause accuracy.
+The cloud path expects an incident onset supplied by the user and at least two observable services. It has been tested against CloudWatch-, Azure Monitor-, and GCP Monitoring-shaped fixtures and the local API, but not against live cloud accounts in this workspace; no cloud project, service names, or incident were supplied for a live integration test. It does not ingest logs or traces, discover topology, monitor live systems, or determine whether the top service truly caused a production incident. The Azure mapping is limited to Container Apps, and the GCP mapping to Cloud Run. A matched study on labeled cloud incidents would be needed before claiming cloud root-cause accuracy.

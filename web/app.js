@@ -44,7 +44,7 @@ function exportReport(caseData) {
       : `${service.fusionRank}. ${service.name} — model #${service.modelRank}, BARO #${service.baroRank}; ${service.metric}; first sustained deviation ${service.firstAnomalySeconds === null ? "not observed" : `+${service.firstAnomalySeconds}s`}; peak ${number(service.peakDeviation)} robust σ`),
     "",
     ...(caseData.groundTruth ? [`Annotated root service: ${caseData.groundTruth}`, ""] : []),
-    cloud ? "This evidence ranking has not been validated as a root-cause model on cloud incidents. Missing telemetry may reflect stopped tasks or monitoring gaps. Verify in your cloud console." : "The hybrid combines model and BARO ranks. Its scores are hypotheses, not calibrated probabilities or proof of causality.",
+    cloud ? "This evidence ranking has not been validated as a root-cause model on cloud incidents. Missing telemetry may reflect autoscaling, idle workloads, stopped tasks, or monitoring gaps. Verify in your cloud console." : "The hybrid combines model and BARO ranks. Its scores are hypotheses, not calibrated probabilities or proof of causality.",
     ...(caseData.signalWarning ? [caseData.signalWarning] : []),
   ];
   const file = new Blob([lines.join("\n") + "\n"], { type: "text/markdown" });
@@ -110,7 +110,7 @@ function drawChart(caseData, service) {
   document.querySelector("#chart-description").textContent = `Recorded ${service.metric} values from ${clock(times[0])} to ${clock(times.at(-1))}. ${onsetLabel} at ${clock(caseData.onset)}. Colour indicates absolute deviation from ${caseData.kind === "cloud" ? "pre-onset observations" : "the preceding five-minute baseline"}: green below 3 robust standard deviations, yellow from 3 to below 6, red at 6 or above. Gaps are missing readings.${service.insufficientPostSamples ? " This metric has fewer than five post-onset readings while another service continued reporting." : ""}`;
   document.querySelector("#start-time").textContent = clock(rangeStart);
   document.querySelector("#end-time").textContent = clock(rangeEnd);
-  document.querySelector("#chart-thresholds").textContent = "SOURCE VALUES, UNCONVERTED  ·  GREEN < 3σ  ·  YELLOW 3–<6σ  ·  RED ≥ 6σ";
+  document.querySelector("#chart-thresholds").textContent = "VALUES IN DISPLAYED UNITS  ·  GREEN < 3σ  ·  YELLOW 3–<6σ  ·  RED ≥ 6σ";
 }
 
 function selectService(caseData, service) {
@@ -132,7 +132,7 @@ function selectService(caseData, service) {
   const onsetText = service.firstAnomalySeconds === null ? cloud ? "No two consecutive critical observations after onset." : "No sustained critical deviation in the first five minutes after onset." : `First sustained critical deviation at +${service.firstAnomalySeconds} seconds.`;
   document.querySelector("#evidence-copy").textContent = cloud
     ? service.insufficientPostSamples
-      ? `${service.missingMetrics} of ${service.metricCount} metric streams have fewer than five post-onset readings while other services continued. This can indicate stopped tasks or a telemetry gap; verify in CloudWatch and ECS. Evidence rank #${service.evidenceRank}.`
+      ? `${service.missingMetrics} of ${service.metricCount} metric streams have fewer than five post-onset readings while other services continued. This can reflect autoscaling, idle workloads, stopped tasks, or a telemetry gap; verify in ${caseData.source}. Evidence rank #${service.evidenceRank}.`
       : `${service.metric}: ${onsetText} Peak deviation: ${number(service.peakDeviation)} robust σ. Evidence rank #${service.evidenceRank}; ${service.triggeredMetrics} of ${service.metricCount} metrics triggered. Observed cadence about ${caseData.cadenceSeconds} seconds.`
     : `${service.metric}: ${onsetText} Peak deviation: ${number(service.peakDeviation)} robust σ. Hybrid rank #${service.fusionRank}; model #${service.modelRank}; BARO #${service.baroRank}; earliest anomaly #${service.baselineRank}.`;
   document.querySelector("#legend-name").textContent = service.metric;
@@ -164,7 +164,7 @@ function renderCase(caseData) {
   document.querySelector("#top-badge").textContent = cloud ? "CLOUD METRICS" : "RCAEval · RE1";
   document.querySelector("#top-context").textContent = cloud ? "LOCAL INVESTIGATION" : "METRIC-ONLY STUDY";
   document.querySelector("#source-name").textContent = cloud ? caseData.source : uploaded ? "Imported CSV" : "RCAEval RE1";
-  document.querySelector("#source-description").textContent = cloud ? "Original sampling cadence" : uploaded ? "Local metrics · no known answer" : "Metric-only fault injections";
+  document.querySelector("#source-description").textContent = cloud ? "Provider metric cadence" : uploaded ? "Local metrics · no known answer" : "Metric-only fault injections";
   document.querySelector("#ranking-name").textContent = cloud ? "Evidence ranking" : { fusion: "Hybrid ranker", model: "Trained model", baro: "BARO" }[mode];
   document.querySelector("#ranking-description").textContent = cloud ? "Robust pre-onset deviation" : { fusion: "Equal-weight model + BARO ranks", model: "Trained on RCAEval cases", baro: "Published metric ranker" }[mode];
   document.querySelector("#count-label").textContent = uploaded ? "ANALYZED SERVICES" : "EVALUATED CASES";
@@ -208,7 +208,7 @@ function renderCase(caseData) {
     reveal.hidden = true;
   };
   document.querySelector("#download-report").onclick = () => exportReport(caseData);
-  document.querySelector("#ranking-footnote").textContent = cloud ? "Ranks prioritize missing service telemetry, then the earliest two consecutive critical observations, affected metric count, and peak deviation. No RCAEval model or BARO score is applied to cloud data. Check whether missing data reflects a stopped task or monitoring gap." : uploaded ? "Hybrid combines the deployable model and BARO ranks. This import is unlabelled; the benchmark scores shown alongside it do not measure accuracy on your data." : "Hybrid combines model and BARO service ranks; it uses BARO as an input. Predictions were saved by the reproducible Python benchmark run.";
+  document.querySelector("#ranking-footnote").textContent = cloud ? "Ranks prioritize missing service telemetry, then the earliest two consecutive critical observations, affected metric count, and peak deviation. No RCAEval model or BARO score is applied to cloud data. Check whether missing data reflects autoscaling, workload inactivity, or a monitoring gap." : uploaded ? "Hybrid combines the deployable model and BARO ranks. This import is unlabelled; the benchmark scores shown alongside it do not measure accuracy on your data." : "Hybrid combines model and BARO service ranks; it uses BARO as an input. Predictions were saved by the reproducible Python benchmark run.";
   document.querySelector("#evaluation-footnote").textContent = uploaded ? "These tables describe RCAEval fault injections, not the accuracy of this imported incident. The deployed model was retrained on all 373 valid RE1 cases." : "Each case is tested on a system excluded from model training. The first two repetitions were used to choose the hybrid rule; the later 223 cases are its validation set. These subsets are not a full RCAEval score.";
   document.querySelector("#evaluation-panel").hidden = cloud;
   document.querySelector("#lower-grid").classList.toggle("cloud-mode", cloud);
