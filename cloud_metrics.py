@@ -1,4 +1,4 @@
-"""Native-cadence evidence ranking for CloudWatch results and long-form metric CSVs."""
+"""Native-cadence evidence ranking for cloud metric exports and long-form CSVs."""
 
 import csv
 import hashlib
@@ -61,11 +61,7 @@ def add_point(series, service, metric, time, value, unit=None):
     entry["points"][time] = value
 
 
-def parse_cloudwatch(source):
-    try:
-        document = json.loads(source.lstrip("\ufeff"))
-    except json.JSONDecodeError as error:
-        raise ValueError("CloudWatch export is not valid JSON") from error
+def parse_cloudwatch(document):
     if not isinstance(document, dict) or not isinstance(document.get("MetricDataResults"), list):
         raise ValueError("Expected CloudWatch GetMetricData JSON with MetricDataResults")
     if document.get("NextToken"):
@@ -94,6 +90,34 @@ def parse_cloudwatch(source):
     return series, "AWS CloudWatch"
 
 
+def parse_provider_export(document):
+    provider = document.get("IncidentAtlasProvider")
+    if provider not in ("Azure Container Apps", "GCP Cloud Run") or not isinstance(document.get("IncidentAtlasSeries"), list):
+        raise ValueError("Expected an Azure Container Apps or GCP Cloud Run export from provider_export.py")
+    series = {}
+    for item in document["IncidentAtlasSeries"]:
+        if not isinstance(item, dict) or not isinstance(item.get("points"), list):
+            raise ValueError("Provider export series must contain points")
+        service, metric, unit = item.get("service"), item.get("metric"), item.get("unit")
+        if not isinstance(service, str) or not isinstance(metric, str) or not isinstance(unit, str) or len(unit) > 24:
+            raise ValueError("Provider export series has invalid service, metric, or unit")
+        for point in item["points"]:
+            if not isinstance(point, list) or len(point) != 2:
+                raise ValueError("Provider export points must be [timestamp, value] pairs")
+            add_point(series, service, metric, timestamp(point[0]), numeric(point[1], f"{service}.{metric}"), unit)
+    return series, provider
+
+
+def parse_cloud_json(source):
+    try:
+        document = json.loads(source.lstrip("\ufeff"))
+    except json.JSONDecodeError as error:
+        raise ValueError("Cloud export is not valid JSON") from error
+    if not isinstance(document, dict):
+        raise ValueError("Cloud export must be a JSON object")
+    return parse_provider_export(document) if "IncidentAtlasProvider" in document else parse_cloudwatch(document)
+
+
 def parse_long_csv(source):
     reader = csv.DictReader(io.StringIO(source.lstrip("\ufeff"), newline=""))
     if reader.fieldnames not in (["timestamp", "service", "metric", "value"], ["timestamp", "service", "metric", "value", "unit"]):
@@ -109,7 +133,7 @@ def parse_long_csv(source):
 
 
 def analyze_cloud(source, onset, name):
-    series, source_name = parse_cloudwatch(source) if source.lstrip("\ufeff \t\r\n").startswith("{") else parse_long_csv(source)
+    series, source_name = parse_cloud_json(source) if source.lstrip("\ufeff \t\r\n").startswith("{") else parse_long_csv(source)
     if not 2 <= len(series) <= 200:
         raise ValueError("Import needs 2–200 metric series across at least two services")
     grouped = defaultdict(list)
