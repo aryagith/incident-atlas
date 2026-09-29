@@ -26,21 +26,25 @@ function number(value) {
 }
 
 function exportReport(caseData) {
-  const ordered = [...caseData.services].sort((a, b) => a.fusionRank - b.fusionRank);
+  const cloud = caseData.kind === "cloud";
+  const ordered = [...caseData.services].sort((a, b) => cloud ? a.evidenceRank - b.evidenceRank : a.fusionRank - b.fusionRank);
   const lines = [
     "# Incident Atlas investigation report",
     "",
     `Incident: ${caseData.systemName}`,
     `Fault onset: ${new Date(caseData.onset * 1000).toISOString()}`,
-    `Source: ${caseData.kind === "uploaded" ? "Imported metrics CSV" : `RCAEval RE1 case ${caseData.id}`}`,
+    `Source: ${cloud ? caseData.source : caseData.kind === "uploaded" ? "Imported metrics CSV" : `RCAEval RE1 case ${caseData.id}`}`,
+    ...(cloud ? [`Observed cadence: about ${caseData.cadenceSeconds} seconds`, "Method: native-cadence robust deviation; two consecutive observations for a sustained change"] : []),
     `Services analyzed: ${caseData.services.length}`,
     "",
     "## Ranked service candidates",
     "",
-    ...ordered.slice(0, 5).map((service) => `${service.fusionRank}. ${service.name} — model #${service.modelRank}, BARO #${service.baroRank}; ${service.metric}; first sustained deviation ${service.firstAnomalySeconds === null ? "not observed" : `+${service.firstAnomalySeconds}s`}; peak ${number(service.peakDeviation)} robust σ`),
+    ...ordered.slice(0, 5).map((service) => cloud
+      ? `${service.evidenceRank}. ${service.name} — ${service.metric}; ${service.insufficientPostSamples ? `${service.missingMetrics}/${service.metricCount} metric streams have fewer than five post-onset readings` : `first sustained deviation ${service.firstAnomalySeconds === null ? "not observed" : `+${service.firstAnomalySeconds}s`}; peak ${number(service.peakDeviation)} robust σ; ${service.triggeredMetrics}/${service.metricCount} metrics triggered`}`
+      : `${service.fusionRank}. ${service.name} — model #${service.modelRank}, BARO #${service.baroRank}; ${service.metric}; first sustained deviation ${service.firstAnomalySeconds === null ? "not observed" : `+${service.firstAnomalySeconds}s`}; peak ${number(service.peakDeviation)} robust σ`),
     "",
     ...(caseData.groundTruth ? [`Annotated root service: ${caseData.groundTruth}`, ""] : []),
-    "The hybrid combines model and BARO ranks. Its scores are hypotheses, not calibrated probabilities or proof of causality.",
+    cloud ? "This evidence ranking has not been validated as a root-cause model on cloud incidents. Missing telemetry may reflect stopped tasks or monitoring gaps. Verify in your cloud console." : "The hybrid combines model and BARO ranks. Its scores are hypotheses, not calibrated probabilities or proof of causality.",
     ...(caseData.signalWarning ? [caseData.signalWarning] : []),
   ];
   const file = new Blob([lines.join("\n") + "\n"], { type: "text/markdown" });
@@ -58,11 +62,15 @@ function drawChart(caseData, service) {
   const svg = document.querySelector("#signal-chart");
   svg.querySelectorAll(".plot").forEach((element) => element.remove());
   const values = service.values;
+  const times = service.times || caseData.time;
   const finite = values.filter(Number.isFinite);
   if (!finite.length) return;
   const min = Math.min(...finite);
   const span = Math.max(Math.max(...finite) - min, Math.abs(min) * 0.01, 1e-9);
-  const x = (index) => 24 + (index * 852) / (values.length - 1);
+  const rangeStart = caseData.kind === "cloud" ? caseData.time[0] : times[0];
+  const rangeEnd = caseData.kind === "cloud" ? caseData.time.at(-1) : times.at(-1);
+  const range = Math.max(rangeEnd - rangeStart, 1);
+  const x = (index) => 24 + ((times[index] - rangeStart) * 852) / range;
   const y = (value) => 174 - ((value - min) / span) * 124;
   const plot = svgElement("g", { class: "plot" });
   const style = getComputedStyle(document.documentElement);
@@ -70,13 +78,13 @@ function drawChart(caseData, service) {
   const colorFor = (value) => colors[severity(value, service.thresholds)];
   const gradient = svgElement("linearGradient", { id: "signal-severity", gradientUnits: "userSpaceOnUse", x1: 24, x2: 876, y1: 0, y2: 0 });
   service.severityScores.forEach((score, index) => {
-    if (Number.isFinite(score)) gradient.append(svgElement("stop", { offset: `${(index / (values.length - 1)) * 100}%`, "stop-color": colorFor(score) }));
+    if (Number.isFinite(score)) gradient.append(svgElement("stop", { offset: `${((times[index] - rangeStart) / range) * 100}%`, "stop-color": colorFor(score) }));
   });
   const defs = svgElement("defs", {});
   defs.append(gradient);
   plot.append(defs);
   for (const gridY of [50, 112, 174]) plot.append(svgElement("line", { x1: 24, x2: 876, y1: gridY, y2: gridY, stroke: "#303637", "stroke-width": 1 }));
-  const onsetX = x(caseData.onsetIndex);
+  const onsetX = 24 + ((caseData.onset - rangeStart) * 852) / range;
   plot.append(svgElement("line", { x1: onsetX, x2: onsetX, y1: 24, y2: 183, stroke: colors.critical, "stroke-width": 1, "stroke-dasharray": "5 5" }));
   let segment = [];
   const flush = () => {
@@ -86,14 +94,22 @@ function drawChart(caseData, service) {
   values.forEach((value, index) => {
     const score = service.severityScores[index];
     if (!Number.isFinite(value) || !Number.isFinite(score)) { flush(); return; }
+    if (caseData.kind === "cloud" && index && times[index] - times[index - 1] > 2.5 * caseData.cadenceSeconds) flush();
     segment.push(`${x(index)},${y(value)}`);
-    plot.append(svgElement("circle", { cx: x(index), cy: y(value), r: index === caseData.onsetIndex ? 4.5 : 2, fill: colorFor(score) }));
+    plot.append(svgElement("circle", { cx: x(index), cy: y(value), r: times[index] === caseData.onset ? 4.5 : 2, fill: colorFor(score) }));
   });
   flush();
+  if (service.insufficientPostSamples) {
+    const annotation = svgElement("text", { x: Math.min(onsetX + 14, 650), y: 42, fill: colors.critical, "font-size": 12, "font-family": "ui-monospace, monospace" });
+    annotation.textContent = "INSUFFICIENT POST-ONSET READINGS";
+    plot.append(annotation);
+  }
   svg.append(plot);
-  const onsetLabel = caseData.kind === "uploaded" ? "Incident onset" : "Fault injection";
+  const onsetLabel = caseData.kind === "uploaded" || caseData.kind === "cloud" ? "Incident onset" : "Fault injection";
   document.querySelector("#chart-title").textContent = `${service.metric} around ${onsetLabel.toLowerCase()}`;
-  document.querySelector("#chart-description").textContent = `Recorded ${service.metric} values from ${clock(caseData.time[0])} to ${clock(caseData.time.at(-1))}. ${onsetLabel} at ${clock(caseData.onset)}. Colour indicates absolute deviation from the preceding five-minute baseline: green below 3 robust standard deviations, yellow from 3 to below 6, red at 6 or above. Gaps are missing readings.`;
+  document.querySelector("#chart-description").textContent = `Recorded ${service.metric} values from ${clock(times[0])} to ${clock(times.at(-1))}. ${onsetLabel} at ${clock(caseData.onset)}. Colour indicates absolute deviation from ${caseData.kind === "cloud" ? "pre-onset observations" : "the preceding five-minute baseline"}: green below 3 robust standard deviations, yellow from 3 to below 6, red at 6 or above. Gaps are missing readings.${service.insufficientPostSamples ? " This metric has fewer than five post-onset readings while another service continued reporting." : ""}`;
+  document.querySelector("#start-time").textContent = clock(rangeStart);
+  document.querySelector("#end-time").textContent = clock(rangeEnd);
   document.querySelector("#chart-thresholds").textContent = "SOURCE VALUES, UNCONVERTED  ·  GREEN < 3σ  ·  YELLOW 3–<6σ  ·  RED ≥ 6σ";
 }
 
@@ -107,13 +123,18 @@ function selectService(caseData, service) {
   const last = service.values.at(-1);
   const score = service.severityScores.at(-1);
   const latest = document.querySelector("#latest-reading");
-  latest.textContent = number(last);
-  latest.style.color = Number.isFinite(score) ? getComputedStyle(document.documentElement).getPropertyValue(`--${severity(score, service.thresholds)}`).trim() : "";
+  latest.textContent = `${number(last)}${service.unit ? ` ${service.unit}` : ""}${service.insufficientPostSamples ? " · last seen" : ""}`;
+  latest.style.color = service.insufficientPostSamples ? getComputedStyle(document.documentElement).getPropertyValue("--critical").trim() : Number.isFinite(score) ? getComputedStyle(document.documentElement).getPropertyValue(`--${severity(score, service.thresholds)}`).trim() : "";
   const badge = document.querySelector("#service-role");
   badge.className = `badge ${service.status}`;
-  badge.textContent = `METRIC ${service.status.toUpperCase()}`;
-  const onsetText = service.firstAnomalySeconds === null ? "No sustained critical deviation in the first five minutes after onset." : `First sustained critical deviation at +${service.firstAnomalySeconds} seconds.`;
-  document.querySelector("#evidence-copy").textContent = `${service.metric}: ${onsetText} Peak deviation: ${number(service.peakDeviation)} robust σ. Hybrid rank #${service.fusionRank}; model #${service.modelRank}; BARO #${service.baroRank}; earliest anomaly #${service.baselineRank}.`;
+  badge.textContent = service.insufficientPostSamples ? "SIGNAL MISSING" : `METRIC ${service.status.toUpperCase()}`;
+  const cloud = caseData.kind === "cloud";
+  const onsetText = service.firstAnomalySeconds === null ? cloud ? "No two consecutive critical observations after onset." : "No sustained critical deviation in the first five minutes after onset." : `First sustained critical deviation at +${service.firstAnomalySeconds} seconds.`;
+  document.querySelector("#evidence-copy").textContent = cloud
+    ? service.insufficientPostSamples
+      ? `${service.missingMetrics} of ${service.metricCount} metric streams have fewer than five post-onset readings while other services continued. This can indicate stopped tasks or a telemetry gap; verify in CloudWatch and ECS. Evidence rank #${service.evidenceRank}.`
+      : `${service.metric}: ${onsetText} Peak deviation: ${number(service.peakDeviation)} robust σ. Evidence rank #${service.evidenceRank}; ${service.triggeredMetrics} of ${service.metricCount} metrics triggered. Observed cadence about ${caseData.cadenceSeconds} seconds.`
+    : `${service.metric}: ${onsetText} Peak deviation: ${number(service.peakDeviation)} robust σ. Hybrid rank #${service.fusionRank}; model #${service.modelRank}; BARO #${service.baroRank}; earliest anomaly #${service.baselineRank}.`;
   document.querySelector("#legend-name").textContent = service.metric;
   drawChart(caseData, service);
 }
@@ -121,22 +142,35 @@ function selectService(caseData, service) {
 function renderCase(caseData) {
   const select = document.querySelector("#case-select");
   select.value = caseData.id;
-  const uploaded = caseData.kind === "uploaded";
-  const mode = document.querySelector("#ranking-mode").value;
+  const cloud = caseData.kind === "cloud";
+  const uploaded = caseData.kind === "uploaded" || cloud;
+  const ranking = document.querySelector("#ranking-mode");
+  for (const option of ranking.options) {
+    option.hidden = cloud ? option.value !== "evidence" : option.value === "evidence";
+    option.disabled = option.hidden;
+  }
+  if (cloud) ranking.value = "evidence";
+  else if (ranking.value === "evidence") ranking.value = "fusion";
+  const mode = ranking.value;
   const rank = `${mode}Rank`;
   const ordered = [...caseData.services].sort((a, b) => a[rank] - b[rank]);
-  document.querySelector("#ranking-caption").textContent = { fusion: "Hybrid: model + BARO", model: uploaded ? "Deployed model" : "Held-out model", baro: "Published BARO" }[mode];
+  document.querySelector("#ranking-caption").textContent = cloud ? "Observed metric evidence" : { fusion: "Hybrid: model + BARO", model: uploaded ? "Deployed model" : "Held-out model", baro: "Published BARO" }[mode];
   document.querySelector("#hero-eyebrow").textContent = uploaded ? "YOUR DATA / INVESTIGATION" : "RE1 / HELD-OUT INVESTIGATION";
   document.querySelector("#sidebar-eyebrow").textContent = uploaded ? "YOUR DATA / SESSION" : "BENCHMARK / 01";
-  document.querySelector("#sidebar-scope").textContent = uploaded ? "This incident has no annotated root cause. Rankings are candidates based on its metric window; benchmark scores do not validate this result." : "75 selected RE1 cases across three systems. Rankings use metrics only and were evaluated on a system excluded from training.";
+  document.querySelector("#sidebar-scope").textContent = cloud ? "Cloud service observations are ranked at their original cadence. This is change evidence near onset, not a validated causal model." : uploaded ? "This incident has no annotated root cause. Rankings are candidates based on its metric window; benchmark scores do not validate this result." : "75 selected RE1 cases across three systems. Rankings use metrics only and were evaluated on a system excluded from training.";
   document.querySelector("#hero-title").textContent = uploaded ? caseData.systemName : `${caseData.systemName} incident`;
-  document.querySelector("#hero-copy").textContent = uploaded ? `${caseData.services.length} metric-bearing services · model trained on ${caseData.modelTrainingCases} labeled benchmark cases. ${caseData.signalWarning || "No annotated root cause is available for this import."}` : `${caseData.faultDescription} · ${caseData.services.length} metric-bearing services · held-out system: ${caseData.systemName}`;
-  document.querySelector("#data-badge").textContent = uploaded ? "IMPORTED METRICS" : "REAL BENCHMARK DATA";
-  document.querySelector("#source-name").textContent = uploaded ? "Imported CSV" : "RCAEval RE1";
-  document.querySelector("#source-description").textContent = uploaded ? "Local metrics · no known answer" : "Metric-only fault injections";
+  document.querySelector("#hero-copy").textContent = cloud ? `${caseData.services.length} services · about ${caseData.cadenceSeconds}s between observations. ${caseData.signalWarning || "Evidence ranking from metric changes around the supplied onset."}` : uploaded ? `${caseData.services.length} metric-bearing services · model trained on ${caseData.modelTrainingCases} labeled benchmark cases. ${caseData.signalWarning || "No annotated root cause is available for this import."}` : `${caseData.faultDescription} · ${caseData.services.length} metric-bearing services · held-out system: ${caseData.systemName}`;
+  document.querySelector("#data-badge").textContent = cloud ? "CLOUD SERVICE METRICS" : uploaded ? "IMPORTED METRICS" : "REAL BENCHMARK DATA";
+  document.querySelector("#top-badge").textContent = cloud ? "CLOUD METRICS" : "RCAEval · RE1";
+  document.querySelector("#top-context").textContent = cloud ? "LOCAL INVESTIGATION" : "METRIC-ONLY STUDY";
+  document.querySelector("#source-name").textContent = cloud ? caseData.source : uploaded ? "Imported CSV" : "RCAEval RE1";
+  document.querySelector("#source-description").textContent = cloud ? "Original sampling cadence" : uploaded ? "Local metrics · no known answer" : "Metric-only fault injections";
+  document.querySelector("#ranking-name").textContent = cloud ? "Evidence ranking" : { fusion: "Hybrid ranker", model: "Trained model", baro: "BARO" }[mode];
+  document.querySelector("#ranking-description").textContent = cloud ? "Robust pre-onset deviation" : { fusion: "Equal-weight model + BARO ranks", model: "Trained on RCAEval cases", baro: "Published metric ranker" }[mode];
   document.querySelector("#count-label").textContent = uploaded ? "ANALYZED SERVICES" : "EVALUATED CASES";
   document.querySelector("#case-count").textContent = uploaded ? String(caseData.services.length) : "75";
-  document.querySelector("#count-description").textContent = uploaded ? "Ranked from this incident window" : "75 selected system × service × fault pairs";
+  document.querySelector("#count-description").textContent = cloud ? "With usable pre-onset observations" : uploaded ? "Ranked from this incident window" : "75 selected system × service × fault pairs";
+  document.querySelector(".metrics").setAttribute("aria-label", uploaded ? "Incident summary" : "Benchmark summary");
   document.querySelector("#hero-onset").textContent = `${uploaded ? "INCIDENT ONSET" : "FAULT INJECTION"} ${new Date(caseData.onset * 1000).toISOString().replace("T", " ").slice(0, 19)} UTC`;
   document.querySelector("#chart-onset-label").textContent = uploaded ? "INCIDENT ONSET" : "FAULT INJECTION";
   document.querySelector("#start-time").textContent = clock(caseData.time[0]);
@@ -162,7 +196,7 @@ function renderCase(caseData) {
   hypotheses.replaceChildren();
   for (const service of ordered.slice(0, 5)) {
     const item = node("li", "", "hypothesis");
-    item.append(node("strong", service.name), node("span", `model #${service.modelRank} · BARO #${service.baroRank}`));
+    item.append(node("strong", service.name), node("span", cloud ? `${service.metric} · ${service.insufficientPostSamples ? "signal missing" : service.firstAnomalySeconds === null ? "no sustained change" : `+${service.firstAnomalySeconds}s`}` : `model #${service.modelRank} · BARO #${service.baroRank}`));
     hypotheses.append(item);
   }
   const truth = document.querySelector("#ground-truth");
@@ -174,8 +208,10 @@ function renderCase(caseData) {
     reveal.hidden = true;
   };
   document.querySelector("#download-report").onclick = () => exportReport(caseData);
-  document.querySelector("#ranking-footnote").textContent = uploaded ? "Hybrid combines the deployable model and BARO ranks. This import is unlabelled; the benchmark scores shown alongside it do not measure accuracy on your data." : "Hybrid combines model and BARO service ranks; it uses BARO as an input. Predictions were saved by the reproducible Python benchmark run.";
+  document.querySelector("#ranking-footnote").textContent = cloud ? "Ranks prioritize missing service telemetry, then the earliest two consecutive critical observations, affected metric count, and peak deviation. No RCAEval model or BARO score is applied to cloud data. Check whether missing data reflects a stopped task or monitoring gap." : uploaded ? "Hybrid combines the deployable model and BARO ranks. This import is unlabelled; the benchmark scores shown alongside it do not measure accuracy on your data." : "Hybrid combines model and BARO service ranks; it uses BARO as an input. Predictions were saved by the reproducible Python benchmark run.";
   document.querySelector("#evaluation-footnote").textContent = uploaded ? "These tables describe RCAEval fault injections, not the accuracy of this imported incident. The deployed model was retrained on all 373 valid RE1 cases." : "Each case is tested on a system excluded from model training. The first two repetitions were used to choose the hybrid rule; the later 223 cases are its validation set. These subsets are not a full RCAEval score.";
+  document.querySelector("#evaluation-panel").hidden = cloud;
+  document.querySelector("#lower-grid").classList.toggle("cloud-mode", cloud);
 }
 
 function table(headers, rows) {
@@ -248,12 +284,12 @@ async function main() {
     const run = document.querySelector("#run-analysis");
     document.querySelector("#open-import").addEventListener("click", () => { panel.hidden = false; panel.scrollIntoView({ behavior: "smooth", block: "start" }); });
     document.querySelector("#close-import").addEventListener("click", () => { panel.hidden = true; });
-    async function submitAnalysis(csv, onset, name) {
+    async function submitAnalysis(content, onset, name) {
       run.disabled = true;
       feedback.className = "";
       feedback.textContent = "Analyzing metric evidence…";
       try {
-        const response = await fetch("api/analyze", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ csv, onset, name }) });
+        const response = await fetch("api/analyze", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ content, onset, name }) });
         const result = await response.json();
         if (!response.ok) throw new Error(result.error || `Analysis failed (${response.status})`);
         const caseData = result.case;
@@ -288,8 +324,8 @@ async function main() {
       event.preventDefault();
       const file = document.querySelector("#metrics-file").files[0];
       if (!file) return;
-      if (file.size > 4_500_000) { feedback.className = "error"; feedback.textContent = "Choose a CSV smaller than 4.5 MB."; return; }
-      await submitAnalysis(await file.text(), Number(document.querySelector("#incident-onset").value), document.querySelector("#incident-name").value);
+      if (file.size > 4_500_000) { feedback.className = "error"; feedback.textContent = "Choose a file smaller than 4.5 MB."; return; }
+      await submitAnalysis(await file.text(), document.querySelector("#incident-onset").value.trim(), document.querySelector("#incident-name").value);
     });
     document.querySelector("#try-example").addEventListener("click", async () => {
       panel.hidden = false;

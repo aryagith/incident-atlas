@@ -1,8 +1,8 @@
 # Incident Atlas
 
-Incident Atlas is a local microservice root-cause investigation app. Import a one-second metrics CSV around a known incident onset, rank service candidates with a trained model and [RCAEval](https://github.com/phamquiluan/RCAEval)'s BARO method, inspect the metric evidence, and export a Markdown investigation report. A built-in RCAEval benchmark explorer shows how the same methods performed on annotated fault injections.
+Incident Atlas is a local service-metrics investigation app. Its practical cloud path exports real Amazon ECS service metrics through CloudWatch, imports the timestamped result without inventing one-second samples, ranks changes around a known incident onset, and exports a Markdown evidence report. It also accepts long-form CSV from other monitoring systems. A separate [RCAEval](https://github.com/phamquiluan/RCAEval) benchmark explorer retains the trained model, BARO comparison, and held-out evaluation.
 
-The dashboard uses **real benchmark telemetry**. RCAEval cases are controlled fault injections, not production outages. A high rank is a hypothesis, not proof of cause.
+The built-in benchmark uses **real benchmark telemetry**. RCAEval cases are controlled fault injections, not production outages. A high rank from either path is a hypothesis, not proof of cause.
 
 ## Run
 
@@ -17,11 +17,39 @@ node server.mjs
 
 On macOS/Linux, use `python3 -m venv .venv`, `.venv/bin/python -m pip install -r requirements.txt`, `.venv/bin/python -m unittest discover -v`, and `node server.mjs`.
 
-Open [http://localhost:8000](http://localhost:8000). The server binds to `127.0.0.1`; set `PORT` to use another local port. The benchmark bundles and deployable [model/ranker.joblib](model/ranker.joblib) are included. No dataset download or API key is needed to use the app. The browser sends an import to the local Python analyzer; the server does not save the uploaded CSV. Imported incidents remain in the browser session and disappear on reload.
+Open [http://localhost:8000](http://localhost:8000). The server binds to `127.0.0.1`; set `PORT` to use another local port. The benchmark bundles and deployable [model/ranker.joblib](model/ranker.joblib) are included. No dataset download or API key is needed to use the benchmark. The browser sends imports to the local Python analyzer; the server does not save uploaded files. Imported incidents remain in the browser session and disappear on reload.
 
-## Analyze your metrics
+## Use real AWS ECS metrics
 
-Click **Analyze your metrics** and enter an incident name, its known fault onset as Unix seconds, and a UTF-8 CSV. **Try real sample** runs the included [web/example.csv](web/example.csv), a 601-second slice of `re1ob_adservice_cpu_1` with onset `1685202688`. Its known answer is used only to check the sample, never sent with the import. Select a service to inspect its metric trace; switch between hybrid, model, and BARO ranks; use **Export report** for a Markdown summary.
+Install and configure the [AWS CLI](https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html) with a profile allowed to call [`cloudwatch:GetMetricData`](https://docs.aws.amazon.com/AmazonCloudWatch/latest/monitoring/permissions-reference-cw.html). Choose the ECS cluster, at least two service names, AWS region, and known incident onset from an alert or deployment record. From this project directory, run:
+
+```powershell
+.\.venv\Scripts\python.exe aws_ecs_export.py --cluster production --services checkout payments --onset 2026-09-29T14:00:00Z --region us-east-1
+```
+
+Use `--profile NAME` for a non-default configured AWS profile and `--output PATH` to change the default `cloudwatch-export.json` filename. The exporter requests each service's CPU and memory utilization at 60-second resolution over 30 minutes before and after onset. These [ECS metrics and dimensions](https://docs.aws.amazon.com/AmazonECS/latest/developerguide/available-metrics.html) and their [default cadence](https://docs.aws.amazon.com/AmazonECS/latest/developerguide/service_utilization.html) are documented by AWS; the exporter uses CloudWatch's [GetMetricData output](https://docs.aws.amazon.com/cli/latest/reference/cloudwatch/get-metric-data.html). It uses your existing AWS CLI credentials locally and writes metric values to the specified JSON file. The default filename is Git-ignored.
+
+In the app, click **Analyze your metrics**, enter the same onset and an incident name, and select the JSON file. The result ranks observed changes at their actual timestamps. Missing service readings after onset are shown as a missing signal if another service continues reporting; verify whether tasks stopped or telemetry was interrupted. The export may lack metrics for services without running tasks, as [AWS documents](https://docs.aws.amazon.com/AmazonECS/latest/developerguide/available-metrics.html). A service needs 10 pre-onset observations; at least one service needs 5 post-onset observations. Use **Export report** to save the evidence summary.
+
+This cloud ranking is a transparent triage heuristic: it prioritizes missing telemetry, then the earliest two consecutive critical deviations, affected metric count, and peak deviation. It has **no measured root-cause accuracy on AWS incidents**. The RCAEval model and BARO scores are deliberately absent from cloud imports because they were developed on a different one-second dataset. A changed downstream service may outrank the actual cause.
+
+## Import a long-form CSV
+
+If another monitor can export metric values, provide UTF-8 CSV with this header and timestamped rows. ISO 8601 timestamps must include a timezone; Unix seconds also work. An optional `unit` column is supported.
+
+```csv
+timestamp,service,metric,value,unit
+2026-09-29T13:30:00Z,checkout,cpu,41.3,%
+2026-09-29T13:30:00Z,payments,cpu,28.1,%
+2026-09-29T13:31:00Z,checkout,cpu,42.0,%
+2026-09-29T13:31:00Z,payments,cpu,27.9,%
+```
+
+Supply two or more services, 2–200 metric series, 10 pre-onset observations per usable series, and at least one series with 5 post-onset observations inside the 30-minute window on each side. Readings need not align perfectly or arrive every second; gaps stay gaps. Duplicate points and nonfinite values are rejected. This is a portable schema, **not** a claim that Azure or GCP console downloads already have these four columns. They still need a provider-specific mapping, which this build does not include.
+
+## RCAEval CSV and benchmark model
+
+**Try RCAEval sample** runs the included [web/example.csv](web/example.csv), a real 601-second slice of `re1ob_adservice_cpu_1` with onset `1685202688`. Its known answer is used only to check the sample, never sent with the import. The original one-second wide CSV format remains supported:
 
 ```csv
 time,frontend_cpu,frontend_latency,cartservice_cpu,cartservice_latency
@@ -29,9 +57,9 @@ time,frontend_cpu,frontend_latency,cartservice_cpu,cartservice_latency
 1685202389,12.2,27.8,8.0,17.1
 ```
 
-Use 2–200 unique `service_metric` columns, 601–3,601 consecutive one-second rows, and at least 300 seconds before and after onset. Service and metric names may contain letters, numbers, and hyphens; a single underscore separates them. Values must be finite numbers or blank. Each usable metric needs at least 60 finite pre-onset readings; at least two services need usable metrics. The input limit is 5 MB and analysis has a 30-second server timeout. The endpoint is `POST /api/analyze` with JSON `{ "name": "...", "onset": 1685202688, "csv": "time,..." }`.
+Use 2–200 unique `service_metric` columns, 601–3,601 consecutive one-second rows, and at least 300 seconds before and after onset. Service and metric names may contain letters, numbers, and hyphens; a single underscore separates them. Values must be finite numbers or blank. Each usable metric needs at least 60 finite pre-onset readings; at least two services need usable metrics. For all imports, the input limit is 5 MB and analysis has a 30-second server timeout. The endpoint is `POST /api/analyze` with JSON `{ "name": "...", "onset": "2026-09-29T14:00:00Z", "content": "...file text..." }`.
 
-The deployable Extra Trees model was retrained on all **373 valid RE1 cases**. The benchmark's held-out fold scores refer to different fold models, so they do **not** estimate accuracy on an arbitrary imported incident. The import has no ground-truth label; candidates are hypotheses rather than verified causes. Metrics are interpreted through statistical deviation from their own pre-onset baseline. Green/yellow/red do not mean a workload is proven healthy, overloaded, or crashing.
+The deployable Extra Trees model was retrained on all **373 valid RE1 cases** and is used only for this benchmark-shaped CSV path. The benchmark's held-out fold scores refer to different fold models, so they do **not** estimate accuracy on an arbitrary imported incident. Imports have no ground-truth label; candidates are hypotheses rather than verified causes. Green/yellow/red show statistical deviation, not confirmed health, overload, or crashes.
 
 ## Reproduce the benchmark
 
@@ -48,7 +76,7 @@ The benchmark case picker covers Online Boutique, Sock Shop, and Train Ticket. S
 - **Telemetry:** the original Parquet values are displayed without unit conversion. The dataset's wide metric table does not provide a per-column unit field; the UI therefore shows source metric names and leaves units unspecified. Null readings remain gaps in the chart.
 - **Included sample:** [web/example.csv](web/example.csv) is derived from the RCAEval case `re1ob_adservice_cpu_1` at the pinned revision under that dataset's MIT license.
 
-## Methods
+## Benchmark methods
 
 All methods receive the fault injection time and the same 300 seconds before and after it. This is a *localization* task with a known onset, not onset detection. For each metric, Incident Atlas computes a normal-window median and robust deviation scale:
 
@@ -91,6 +119,6 @@ Train Ticket remains the hardest held-out system. Results by injected fault and 
 
 ## Limits
 
-This is a metric-only study of controlled injections in three systems. It does not measure production reliability, time saved, or causal correctness. The hybrid can be wrong, and its gain relies on running BARO. Bootstrap intervals group repeated injections but cannot capture uncertainty about entirely new systems. The dashboard lists metric-bearing service candidates, not a verified dependency topology.
+The benchmark is a metric-only study of controlled injections in three systems. It does not measure production reliability, time saved, or causal correctness. The hybrid can be wrong, and its gain relies on running BARO. Bootstrap intervals group repeated injections but cannot capture uncertainty about entirely new systems. The dashboard lists metric-bearing service candidates, not a verified dependency topology.
 
-The app expects an incident onset supplied by the user and a wide, one-second CSV. It does not ingest logs or traces, discover topology, monitor live systems, infer metric units, or determine whether the top service truly caused a production incident. A matched RE2 study with logs and traces would need measured ablations before those signals could be claimed as improvements.
+The cloud path expects an incident onset supplied by the user and at least two observable services. It has been tested against CloudWatch-shaped fixtures and the local API, but not against a live AWS account in this workspace. It does not ingest logs or traces, discover topology, monitor live systems, or determine whether the top service truly caused a production incident. Azure and GCP do not yet have direct exporters here. A matched study on labeled cloud incidents would be needed before claiming cloud root-cause accuracy.

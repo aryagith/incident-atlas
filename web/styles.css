@@ -26,6 +26,7 @@ button { cursor: pointer; }
 .badge.warning { color: var(--warning); border-color: #856838; background: #2d2517; }
 .badge.critical { color: var(--critical); border-color: #8d4141; background: #321b1b; }
 .badge.unknown { color: var(--accent); border-color: #444a4b; background: #171a1b; }
+.badge.missing { color: var(--critical); border-color: #8d4141; background: #321b1b; }
 .top-time, .eyebrow, .chart-axis, .muted, .side-link { font: 11px ui-monospace, SFMono-Regular, Consolas, monospace; letter-spacing: .08em; }
 .top-time, .eyebrow, .muted { color: #949b9b; }
 .shell { display: grid; grid-template-columns: 252px minmax(0, 1fr); min-height: calc(100vh - 64px); }
@@ -49,6 +50,10 @@ button { cursor: pointer; }
 .import-help, .import-actions, #import-feedback { grid-column: 1 / -1; margin: 0; }
 .import-help { color: #a2a8a8; font-size: 12px; line-height: 1.6; }
 .import-help code { color: #e7e8e6; }
+.import-guide { grid-column: 1 / -1; color: #a2a8a8; font-size: 12px; line-height: 1.6; }
+.import-guide summary { color: #d4d9d8; cursor: pointer; }
+.import-guide p { margin: 9px 0; }
+.import-guide code { display: block; overflow-x: auto; padding: 10px; border: 1px solid #34383a; color: #d4d9d8; font: 11px ui-monospace, SFMono-Regular, Consolas, monospace; white-space: nowrap; }
 .import-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
 .import-actions a { color: var(--accent); font: 11px ui-monospace, SFMono-Regular, Consolas, monospace; }
 #import-feedback { min-height: 16px; color: #aab1b2; font-size: 12px; }
@@ -79,6 +84,7 @@ button { cursor: pointer; }
 .service-state.warning { color: var(--warning); }
 .service-state.critical { color: var(--critical); }
 .service-state.unknown { color: var(--accent); }
+.service-state.missing { color: var(--critical); }
 .service-sub { font-size: 11px; color: #949b9b; }
 .panel-footnote { font-size: 10px; color: #778083; padding: 1px 22px 14px; line-height: 1.5; margin: 0; }
 .evidence-content { padding: 23px; }
@@ -96,6 +102,7 @@ svg { width: 100%; height: 220px; display: block; overflow: visible; }
 .chart-axis { display: flex; justify-content: space-between; gap: 12px; color: #858d8f; padding: 11px 26px 21px; }
 .chart-axis b { color: var(--critical); font-weight: 500; }
 .lower-grid { margin-top: 16px; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; }
+.lower-grid.cloud-mode { grid-template-columns: 1fr; }
 .hypotheses { list-style: none; margin: 0; padding: 9px 22px 12px; }
 .hypothesis { display: flex; justify-content: space-between; gap: 15px; border-bottom: 1px solid #303637; padding: 13px 0; font-size: 12px; }
 .hypothesis strong { overflow-wrap: anywhere; }

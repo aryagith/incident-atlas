@@ -11,7 +11,7 @@
   <body>
     <header class="topbar">
       <div class="brand"><span class="brand-mark" aria-hidden="true">✳</span> INCIDENT ATLAS <span class="brand-caption">/ INVESTIGATE</span></div>
-      <div class="topbar-right"><span class="badge preview">RCAEval · RE1</span><span class="top-time">METRIC-ONLY STUDY</span></div>
+      <div class="topbar-right"><span class="badge preview" id="top-badge">RCAEval · RE1</span><span class="top-time" id="top-context">METRIC-ONLY STUDY</span></div>
     </header>
     <div class="shell">
       <aside class="sidebar" aria-label="Case navigation">
@@ -27,13 +27,14 @@
       </aside>
       <main class="main">
         <section id="import-panel" class="panel import-panel" aria-labelledby="import-title" hidden>
-          <div class="panel-heading"><div><span class="eyebrow">YOUR DATA / LOCAL ANALYSIS</span><h3 id="import-title">Analyze a metrics CSV</h3></div><button id="close-import" class="plain-button" type="button" aria-label="Close import form">Close</button></div>
+          <div class="panel-heading"><div><span class="eyebrow">YOUR DATA / LOCAL ANALYSIS</span><h3 id="import-title">Analyze service metrics</h3></div><button id="close-import" class="plain-button" type="button" aria-label="Close import form">Close</button></div>
           <form id="import-form" class="import-form">
             <label>INCIDENT NAME<input id="incident-name" type="text" maxlength="80" value="My incident" required></label>
-            <label>FAULT ONSET · UNIX SECONDS<input id="incident-onset" type="number" min="1" step="1" placeholder="e.g. 1685202688" required></label>
-            <label>METRICS CSV<input id="metrics-file" type="file" accept=".csv,text/csv" required></label>
-            <p class="import-help">Use <code>time,service_metric,...</code> headers and one reading per second, with 300 seconds before and after the known onset. Blank metric cells are allowed. The file is analyzed locally and is not saved by the server.</p>
-            <div class="import-actions"><button id="run-analysis" class="plain-button" type="submit">Run analysis</button><button id="try-example" class="plain-button" type="button">Try real sample</button><a href="example.csv" download>Download sample CSV ↗</a></div>
+            <label>INCIDENT ONSET · UTC<input id="incident-onset" type="text" placeholder="2026-09-29T14:00:00Z or Unix seconds" required></label>
+            <label>METRICS FILE<input id="metrics-file" type="file" accept=".csv,.json,text/csv,application/json" required></label>
+            <p class="import-help">Import an AWS CloudWatch <code>GetMetricData</code> JSON export with <code>service.metric</code> labels, or a long CSV with <code>timestamp,service,metric,value</code> columns. One-minute observations are supported without filling in fake one-second readings. The original RCAEval CSV format still works. Files are analyzed locally and are not saved by the server.</p>
+            <details class="import-guide"><summary>Export real AWS ECS service metrics</summary><p>With an AWS CLI profile that can read CloudWatch metrics, run this from the project folder. Replace the cluster, service names, onset, and region with yours; then import the generated JSON above.</p><code>.\.venv\Scripts\python.exe aws_ecs_export.py --cluster production --services checkout payments --onset 2026-09-29T14:00:00Z --region us-east-1</code><p>Queries CPU and memory for each ECS service at one-minute resolution over 30 minutes before and after onset. The export stays on your computer.</p></details>
+            <div class="import-actions"><button id="run-analysis" class="plain-button" type="submit">Run analysis</button><button id="try-example" class="plain-button" type="button">Try RCAEval sample</button><a href="example.csv" download>Download sample CSV ↗</a></div>
             <p id="import-feedback" role="status" aria-live="polite"></p>
           </form>
         </section>
@@ -43,12 +44,12 @@
         </section>
         <section class="metrics" aria-label="Benchmark summary">
           <div><span class="eyebrow">DATA SOURCE</span><strong id="source-name">RCAEval RE1</strong><small id="source-description">Metric-only fault injections</small></div>
-          <div><span class="eyebrow">RANKING</span><strong>Hybrid ranker</strong><small>Equal-weight model + BARO ranks</small></div>
+          <div><span class="eyebrow">RANKING</span><strong id="ranking-name">Hybrid ranker</strong><small id="ranking-description">Equal-weight model + BARO ranks</small></div>
           <div><span class="eyebrow" id="count-label">EVALUATED CASES</span><strong id="case-count">—</strong><small id="count-description">75 selected system × service × fault pairs</small></div>
         </section>
         <div class="workgrid">
           <section class="panel map-panel" aria-labelledby="map-title">
-            <div class="panel-heading"><div><span class="eyebrow">01 / SERVICE CANDIDATES</span><h3 id="map-title">Ranked services</h3></div><label class="muted" for="ranking-mode">RANK BY <select id="ranking-mode" class="ranking-mode"><option value="fusion">Hybrid</option><option value="model">Model</option><option value="baro">BARO</option></select></label></div>
+            <div class="panel-heading"><div><span class="eyebrow">01 / SERVICE CANDIDATES</span><h3 id="map-title">Ranked services</h3></div><label class="muted" for="ranking-mode">RANK BY <select id="ranking-mode" class="ranking-mode"><option value="fusion">Hybrid</option><option value="model">Model</option><option value="baro">BARO</option><option value="evidence" hidden disabled>Evidence</option></select></label></div>
             <div id="service-map" class="service-map"></div>
             <p class="panel-footnote">Colours describe each displayed metric at the final timestamp. This is a ranked list, not a dependency graph.</p>
           </section>
@@ -63,14 +64,14 @@
           <div class="chart-axis"><span id="start-time">—</span><span><span id="chart-onset-label">FAULT INJECTION</span> <b id="onset-time">—</b></span><span id="end-time">—</span></div>
           <p class="panel-footnote" id="chart-thresholds"></p>
         </section>
-        <div class="workgrid lower-grid">
+        <div class="workgrid lower-grid" id="lower-grid">
           <section class="panel" aria-labelledby="hypotheses-title">
             <div class="panel-heading"><div><span class="eyebrow">04 / RANKING</span><h3 id="hypotheses-title">Ranked hypotheses</h3></div><span class="muted" id="ranking-caption">Hybrid: model + BARO</span></div>
             <ol id="hypotheses" class="hypotheses"></ol>
             <div class="truth-row"><button id="reveal-truth" class="plain-button" type="button">Reveal ground truth</button><button id="download-report" class="plain-button" type="button">Export report</button><span id="ground-truth" aria-live="polite"></span></div>
             <p id="ranking-footnote" class="panel-footnote">Hybrid combines model and BARO service ranks; it uses BARO as an input. Predictions were saved by the reproducible Python benchmark run.</p>
           </section>
-          <section class="panel" aria-labelledby="evaluation-title">
+          <section class="panel" id="evaluation-panel" aria-labelledby="evaluation-title">
             <div class="panel-heading"><div><span class="eyebrow">05 / EVALUATION</span><h3 id="evaluation-title">Measured results</h3></div><span class="muted" id="eval-count">—</span></div>
             <div id="evaluation" class="evaluation"></div>
             <p id="evaluation-footnote" class="panel-footnote">Each case is tested on a system excluded from model training. The first two repetitions were used to choose the hybrid rule; the later 223 cases are its validation set. These subsets are not a full RCAEval score.</p>
