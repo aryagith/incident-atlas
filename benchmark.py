@@ -20,6 +20,7 @@ REVISION = "afeacb11bcc94dadfd1c8f483ee4377b2b8b614e"
 BASE = f"https://huggingface.co/datasets/phamquiluan/RCAEval/resolve/{REVISION}/"
 DATA = Path(__file__).parent / "data"
 OUTPUT = Path(__file__).parent / "web" / "benchmark.json"
+MODEL_PATH = Path(__file__).parent / "model" / "ranker.joblib"
 WINDOW_SECONDS = 300
 WARNING_Z = 3.0
 CRITICAL_Z = 6.0
@@ -65,6 +66,16 @@ def selected_cases(excluded=None, expected=75):
     return sorted(cases, key=lambda row: row["case"])
 
 
+def selected_cohorts():
+    used = set()
+    cohorts = []
+    for expected in (75, 75, 75, 75, 73):
+        rows = selected_cases(used, expected=expected)
+        cohorts.append(rows)
+        used.update(row["case"] for row in rows)
+    return cohorts
+
+
 def fetch(cases):
     with ThreadPoolExecutor(max_workers=6) as pool:
         futures = {pool.submit(download, f"{row['case']}/metrics.parquet"): row["case"] for row in cases}
@@ -84,7 +95,11 @@ def clean_number(value):
 
 def read_case(row):
     table = pq.read_table(DATA / row["case"] / "metrics.parquet")
-    timestamps = np.asarray(table["time"].to_numpy(), dtype=np.int64)
+    return case_from_metrics(row, table["time"].to_numpy(), table.column_names, lambda name: table[name].to_numpy())
+
+
+def case_from_metrics(row, timestamps, metric_names, values_for):
+    timestamps = np.asarray(timestamps, dtype=np.int64)
     onset = row["inject_time"]
     window = (timestamps >= onset - WINDOW_SECONDS) & (timestamps <= onset + WINDOW_SECONDS)
     times = timestamps[window]
@@ -95,11 +110,11 @@ def read_case(row):
     sample_indices = np.unique(np.linspace(0, len(times) - 1, 121, dtype=int))
     grouped = defaultdict(lambda: {"metrics": [], "best": None})
 
-    for metric in table.column_names:
+    for metric in metric_names:
         if metric == "time" or "_" not in metric:
             continue
         service = metric.rsplit("_", 1)[0]
-        values = np.asarray(table[metric].to_numpy(), dtype=float)[window]
+        values = np.asarray(values_for(metric), dtype=float)[window]
         baseline = values[normal_mask]
         baseline = baseline[np.isfinite(baseline)]
         if len(baseline) < 60:
@@ -144,15 +159,18 @@ def read_case(row):
             "peakDeviation": clean_number(peaks[0]),
             "features": features,
         })
-    if row["root_cause_service"] not in {service["id"] for service in services}:
-        raise ValueError(f"Ground-truth service lacks metrics in {row['case']}: {row['root_cause_service']}")
+    if not services:
+        raise ValueError(f"No usable service metrics in {row['case']}")
+    truth = row.get("root_cause_service")
+    if truth is not None and truth not in {service["id"] for service in services}:
+        raise ValueError(f"Ground-truth service lacks metrics in {row['case']}: {truth}")
     return {
         "id": row["case"],
         "system": row["system"],
         "systemName": row["system_name"],
         "fault": row["fault"],
         "faultDescription": row["fault_description"],
-        "groundTruth": row["root_cause_service"],
+        "groundTruth": truth,
         "onset": onset,
         "time": [int(value) for value in times[sample_indices]],
         "onsetIndex": int(np.argmin(np.abs(times[sample_indices] - onset))),
@@ -177,6 +195,8 @@ def rank_case(case, model):
         service["modelRank"] = position
     case["rankTimeMs"] = {"baseline": clean_number(baseline_ms), "model": clean_number(model_ms)}
     case["services"] = ranked
+    if case["groundTruth"] is None:
+        return {}
     return {"baseline": next(item["baselineRank"] for item in services if item["id"] == case["groundTruth"]), "model": next(item["modelRank"] for item in services if item["id"] == case["groundTruth"])}
 
 
@@ -191,13 +211,13 @@ def load_baro():
     return module.baro
 
 
-def rank_baro(case, baro):
-    table = pq.read_table(DATA / case["id"] / "metrics.parquet").to_pandas()
+def rank_baro(case, baro, table=None):
+    table = table if table is not None else pq.read_table(DATA / case["id"] / "metrics.parquet").to_pandas()
     onset = case["onset"]
     window = table[(table["time"] >= onset - WINDOW_SECONDS) & (table["time"] <= onset + WINDOW_SECONDS)]
     window = window.ffill().bfill().fillna(0.0)
     start = time.perf_counter()
-    metric_ranks = baro(window, onset, dataset=f"re1-{case['system']}")["ranks"]
+    metric_ranks = baro(window, onset, dataset="user" if case["system"] == "upload" else f"re1-{case['system']}")["ranks"]
     elapsed = (time.perf_counter() - start) * 1000
     candidates = {service["id"] for service in case["services"]}
     ordered = list(dict.fromkeys(metric.rsplit("_", 1)[0] for metric in metric_ranks if "_" in metric and metric.rsplit("_", 1)[0] in candidates))
@@ -206,7 +226,8 @@ def rank_baro(case, baro):
     for service in case["services"]:
         service["baroRank"] = positions[service["id"]]
     case["rankTimeMs"]["baro"] = clean_number(elapsed)
-    case["truthRanks"]["baro"] = positions[case["groundTruth"]]
+    if case["groundTruth"] is not None:
+        case["truthRanks"]["baro"] = positions[case["groundTruth"]]
 
 
 def rank_fusion(case):
@@ -215,7 +236,24 @@ def rank_fusion(case):
     for position, service in enumerate(ranked, 1):
         service["fusionRank"] = position
     case["rankTimeMs"]["fusion"] = clean_number((time.perf_counter() - start) * 1000)
-    case["truthRanks"]["fusion"] = next(service["fusionRank"] for service in ranked if service["id"] == case["groundTruth"])
+    if case["groundTruth"] is not None:
+        case["truthRanks"]["fusion"] = next(service["fusionRank"] for service in ranked if service["id"] == case["groundTruth"])
+
+
+def train_deployment(rows):
+    from joblib import dump
+
+    cases = [read_case(row) for row in rows]
+    x = [service["features"] for case in cases for service in case["services"]]
+    y = [int(service["id"] == case["groundTruth"]) for case in cases for service in case["services"]]
+    model = ExtraTreesClassifier(n_estimators=100, max_depth=5, min_samples_leaf=3, class_weight="balanced", random_state=7, n_jobs=-1)
+    model.fit(x, y)
+    artifact = {"model": model, "datasetRevision": REVISION, "trainingCaseIds": [case["id"] for case in cases], "featureCount": 7}
+    MODEL_PATH.parent.mkdir(parents=True, exist_ok=True)
+    temporary = MODEL_PATH.with_suffix(".joblib.tmp")
+    dump(artifact, temporary, compress=3)
+    os.replace(temporary, MODEL_PATH)
+    print(f"Wrote {MODEL_PATH} using {len(cases)} labeled cases")
 
 
 def summarize(cases, method):
@@ -300,29 +338,26 @@ def build(rows, training_rows=None, output=OUTPUT, compact=False, selection=None
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("command", choices=("fetch", "build", "all", "sensitivity", "validation"))
+    parser.add_argument("command", choices=("fetch", "build", "sensitivity", "validation", "train", "all"))
     args = parser.parse_args()
     rows = selected_cases()
     if args.command in ("fetch", "all"):
         fetch(rows)
     if args.command in ("build", "all"):
         build(rows)
-    if args.command == "sensitivity":
-        next_rows = selected_cases({row["case"] for row in rows})
-        fetch(next_rows)
-        build(next_rows, training_rows=rows, output=OUTPUT.with_name("sensitivity.json"), compact=True)
-    if args.command == "validation":
-        used = {row["case"] for row in rows}
-        second = selected_cases(used)
-        used.update(row["case"] for row in second)
-        third = selected_cases(used)
-        used.update(row["case"] for row in third)
-        fourth = selected_cases(used)
-        used.update(row["case"] for row in fourth)
-        fifth = selected_cases(used, expected=73)
-        final = third + fourth + fifth
-        fetch(final)
-        build(final, training_rows=rows, output=OUTPUT.with_name("validation.json"), compact=True, selection="third and fourth valid repetitions for all 75 pairs, plus the last valid repetition for 73 pairs; equal-weight fusion chosen on first and second repetitions", cohorts={"third": third, "fourth": fourth, "last": fifth}, development_rows=second)
+    if args.command in ("sensitivity", "validation", "train", "all"):
+        first, second, third, fourth, last = selected_cohorts()
+        if args.command in ("sensitivity", "all"):
+            fetch(second)
+            build(second, training_rows=first, output=OUTPUT.with_name("sensitivity.json"), compact=True)
+        if args.command in ("validation", "all"):
+            final = third + fourth + last
+            fetch(final)
+            build(final, training_rows=first, output=OUTPUT.with_name("validation.json"), compact=True, selection="third and fourth valid repetitions for all 75 pairs, plus the last valid repetition for 73 pairs; equal-weight fusion chosen on first and second repetitions", cohorts={"third": third, "fourth": fourth, "last": last}, development_rows=second)
+        if args.command in ("train", "all"):
+            training = first + second + third + fourth + last
+            fetch(training)
+            train_deployment(training)
 
 
 if __name__ == "__main__":
