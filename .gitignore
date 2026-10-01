@@ -8,3 +8,7 @@ artifacts/
 cloudwatch-export*.json
 azure-containerapps-export*.json
 gcp-cloudrun-export*.json
+
+# Keep project notes local; README remains tracked.
+*.[mM][dD]
+!README.md
