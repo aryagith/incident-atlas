@@ -4,20 +4,56 @@ Incident Atlas is a local service-metrics investigation app. Its cloud exporters
 
 The built-in benchmark uses **real benchmark telemetry**. RCAEval cases are controlled fault injections, not production outages. A high rank from either path is a hypothesis, not proof of cause.
 
-## Run
+![Incident Atlas dashboard showing ranked services and anomaly evidence](docs/images/dashboard.png)
 
-On Windows, from this directory (Python 3.11 and Node.js required):
+## How to run
+
+Install **Python 3.11**, **Node.js 18 or newer**, and **Git**. Clone the repository:
+
+```sh
+git clone https://github.com/aryagith/incident-atlas.git
+cd incident-atlas
+```
+
+### Windows (PowerShell)
 
 ```powershell
 python -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -r requirements.txt
-.\.venv\Scripts\python.exe -m unittest discover -v
 node server.mjs
 ```
 
-On macOS/Linux, use `python3 -m venv .venv`, `.venv/bin/python -m pip install -r requirements.txt`, `.venv/bin/python -m unittest discover -v`, and `node server.mjs`.
+### macOS / Linux
+
+```sh
+python3.11 -m venv .venv
+.venv/bin/python -m pip install -r requirements.txt
+node server.mjs
+```
 
 Open [http://localhost:8000](http://localhost:8000). The server binds to `127.0.0.1`; set `PORT` to use another local port. The benchmark bundles and deployable [model/ranker.joblib](model/ranker.joblib) are included. No dataset download or API key is needed to use the benchmark. The browser sends imports to the local Python analyzer; the server does not save uploaded files. Imported incidents remain in the browser session and disappear on reload.
+
+To stop the server, press **Ctrl+C** in its terminal. To run the automated checks, use `.\.venv\Scripts\python.exe -m unittest discover -v` on Windows or `.venv/bin/python -m unittest discover -v` on macOS/Linux.
+
+## Explore the dashboard
+
+1. Choose an incident from **Select case**. Switch **Rank by** between Hybrid, Model, and BARO to compare their service rankings.
+2. Click a service card to inspect its metric. Hover or click the timeline to read a sample, or focus the graph and use the arrow keys, Home, and End. Green, yellow, and red show increasing statistical deviation from the normal window.
+3. Use **Reveal ground truth** to compare your hypothesis with the injected fault, and **Export report** to save an evidence summary.
+
+![Metric timeline with a cursor inspector showing a timestamp and reading](docs/images/metric-inspector.png)
+
+### Practice on held-out cases
+
+Click **Try 223 held-out cases**, inspect a case, choose your root-service hypothesis, and click **Check hypothesis**. **Score all 223 saved predictions** reproduces the saved validation scores in the browser; it does not train a model or run a new evaluation on your own data.
+
+![Held-out validation exercise and measured comparison of four ranking methods](docs/images/validation.png)
+
+### Analyze your own metrics
+
+Click **Analyze your metrics**, enter an incident name and onset, select a CSV or supported provider JSON file, and click **Run analysis**. If you do not have cloud services running, **Try RCAEval sample** exercises the local analyzer with the included benchmark sample. The provider-specific export instructions below explain how to obtain metrics from actual services.
+
+![Import form with incident onset, file upload, and provider export guidance](docs/images/import-metrics.png)
 
 ## Use real AWS ECS metrics
 
